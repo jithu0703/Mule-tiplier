@@ -1,4 +1,4 @@
 /data
 /outputs
 /chain-reaction-env
-/src/__pycache__/
+*.pyc
