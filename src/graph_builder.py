@@ -8,7 +8,7 @@ def build_graph(df: pd.DataFrame) -> nx.DiGraph:
     for i, row in df.iterrows():
         G.add_edge(
             row['from_Account'], row['to_Account'],
-            amount = row['Amount Paid'],
+            amount = row['amount_paid_usd'],
             timestamp = row['Timestamp'],
             is_laundering = row['Is Laundering']
         )
