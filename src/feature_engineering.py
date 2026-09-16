@@ -51,6 +51,7 @@ def compute_account_features(G: nx.DiGraph, df: pd.DataFrame) -> pd.DataFrame:
 
     holding_time = compute_avg_holding_time(df)
     features = features.join(holding_time.rename('avg_holding_time'), how='left')
+    features['has_outflow_after_inflow'] = features['avg_holding_time'].notna().astype(int)
 
     # fill structural NaNs (accounts with only inflow or only outflow)
     features[['in_degree', 'out_degree', 'total_in', 'total_out']] = \
@@ -69,8 +70,9 @@ def compute_account_features(G: nx.DiGraph, df: pd.DataFrame) -> pd.DataFrame:
         features[['laundering_in', 'laundering_out']].max(axis=1).fillna(0).astype(int)
     )
 
+    features.index.name = 'account'
     features = features.drop(
         columns=['in_counterparties', 'out_counterparties', 'laundering_in', 'laundering_out']
-    ).reset_index().rename(columns={'index': 'account'})
+    ).reset_index()
 
     return features
