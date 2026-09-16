@@ -41,6 +41,8 @@ chain-reaction/
 │
 ├── outputs/
 │   └── figures/               # Saved plots and visualizations
+|   └── cache/                 # Graphs and other data
+|   └── models/                # Store baseline model
 │
 ├── requirements.txt
 └── README.md
@@ -85,7 +87,7 @@ Transaction amounts in the dataset span multiple currencies (USD, Euro, Bitcoin,
 Load transaction data, standardize currencies, and build a directed graph (nodes = accounts, edges = transactions). Visualize and contrast the local subgraph of a known laundering account against a legitimate one.
 
 ### Milestone 2 — Feature Engineering + Baseline Model
-Compute per-account graph features (in/out-degree, total inflow/outflow, average holding time, PageRank, unique counterparties) and train an XGBoost baseline classifier. Evaluated with precision-recall AUC due to severe class imbalance. This establishes the benchmark score for all later milestones.
+Compute per-account graph features (in/out-degree, total inflow/outflow, average holding time, has_outflow_after_inflow,  PageRank, unique counterparties) and train an XGBoost baseline classifier. Evaluated with precision-recall AUC due to severe class imbalance. This establishes the benchmark score for all later milestones.
 
 ### Milestone 3 — Graph Neural Network (GraphSAGE)
 Train a GraphSAGE model using neighbor sampling to learn account embeddings directly from graph structure, rather than relying solely on hand-crafted features. Compared against the Milestone 2 baseline.
@@ -102,7 +104,7 @@ Reimplement feature engineering in PySpark + GraphFrames for larger dataset size
 
 | Model | PR-AUC | Notes |
 |---|---|---|
-| XGBoost (baseline, graph features) | *TBD* | Milestone 2 benchmark |
+| XGBoost (baseline, graph features) | *0.0914* | Milestone 2 benchmark |
 | GraphSAGE | *TBD* | Milestone 3 |
 
 
