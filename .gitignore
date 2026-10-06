@@ -2,3 +2,5 @@
 /outputs
 /chain-reaction-env
 *.pyc
+.claude/
+Chain-Reaction-Pitch.pptx
