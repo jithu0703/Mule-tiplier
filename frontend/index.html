@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mule-tiplier — AML Money Mule Detection & Graph Intelligence</title>
+    <meta name="description" content="Mule-tiplier: Enterprise Anti-Money Laundering graph intelligence cockpit powered by inductive GraphSAGE GNNs, multi-hop temporal motif chain tracing, and GNNExplainer attribution.">
+    
+    <!-- Typography: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app" class="app-layout">
+        <!-- 1. Top Bar Navigation (64px) -->
+        <header class="top-bar">
+            <div class="logo-area">
+                <div class="logo-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="6" cy="6" r="3" fill="#B6FF2E" stroke="#B6FF2E"/>
+                        <circle cx="18" cy="18" r="3" fill="#B6FF2E" stroke="#B6FF2E"/>
+                        <circle cx="18" cy="6" r="2.5" stroke="#B6FF2E"/>
+                        <path d="M8.5 8.5l7 7" stroke="#B6FF2E" stroke-width="2.5"/>
+                        <path d="M15.5 8.5l-7 7" stroke="#B6FF2E" stroke-width="1.5" stroke-dasharray="2 2"/>
+                    </svg>
+                </div>
+                <div class="logo-text">
+                    <span class="brand-name">Mule-tiplier</span>
+                    <span class="brand-tag">AML</span>
+                </div>
+            </div>
+
+            <!-- Global Search & Autocomplete Input -->
+            <div class="search-container">
+                <div class="search-box" id="search-box">
+                    <i data-lucide="search" class="search-icon"></i>
+                    <input type="text" id="global-search-input" placeholder="Search Account ID or Presets... (Press '/' to focus)" autocomplete="off">
+                    <span class="keyboard-hint" id="kbd-hint">/</span>
+                </div>
+                <div class="autocomplete-dropdown hidden" id="autocomplete-dropdown">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Right Controls: Status Chip & Theme Toggle -->
+            <div class="top-controls">
+                <div class="status-chip" title="Model operational on NVIDIA GPU">
+                    <span class="pulse-dot"></span>
+                    <span class="status-label">Live · CUDA Model</span>
+                </div>
+                <button class="icon-btn theme-toggle" id="theme-toggle-btn" title="Toggle Light/Dark Theme">
+                    <i data-lucide="sun" class="sun-icon"></i>
+                    <i data-lucide="moon" class="moon-icon"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- 2. Global Telemetry Bar (4 KPI Tiles) -->
+        <section class="telemetry-bar">
+            <div class="telemetry-tile">
+                <div class="tile-header">
+                    <span class="tile-title">MONITORED ACCOUNTS</span>
+                    <i data-lucide="users" class="tile-icon"></i>
+                </div>
+                <div class="tile-body">
+                    <span class="tile-value mono" id="tile-accounts">515,080</span>
+                    <span class="sparkline-preview">HI-Small AML</span>
+                </div>
+            </div>
+
+            <div class="telemetry-tile">
+                <div class="tile-header">
+                    <span class="tile-title">TRANSACTIONS ANALYZED</span>
+                    <i data-lucide="database" class="tile-icon"></i>
+                </div>
+                <div class="tile-body">
+                    <span class="tile-value mono" id="tile-transactions">5.08M</span>
+                    <span class="sparkline-preview">Directed USD Edges</span>
+                </div>
+            </div>
+
+            <div class="telemetry-tile highlight-tile">
+                <div class="tile-header">
+                    <span class="tile-title">MODEL PR-AUC</span>
+                    <span class="delta-chip" id="tile-pr-delta">+128% LIFT</span>
+                </div>
+                <div class="tile-body">
+                    <span class="tile-value mono accent-text" id="tile-prauc">0.1884</span>
+                    <span class="tile-subtext">vs 0.0834 Tabular XGBoost</span>
+                </div>
+            </div>
+
+            <div class="telemetry-tile highlight-tile">
+                <div class="tile-header">
+                    <span class="tile-title">ALERT PURITY (PRECISION)</span>
+                    <span class="delta-chip" id="tile-purity-delta">2.4x PURER</span>
+                </div>
+                <div class="tile-body">
+                    <span class="tile-value mono accent-text" id="tile-purity">28.3%</span>
+                    <div class="mini-progress-bar">
+                        <div class="progress-fill" style="width: 28.3%;"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. Sticky Account Investigation Banner (72px) -->
+        <section class="account-banner" id="account-banner">
+            <div class="banner-left">
+                <span class="banner-caption">ACCOUNT UNDER INVESTIGATION</span>
+                <div class="account-id-row">
+                    <span class="account-id-text mono" id="banner-account-id">811C2F680</span>
+                    <button class="copy-btn icon-btn" id="copy-account-btn" title="Copy Account ID">
+                        <i data-lucide="copy"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="banner-center">
+                <div class="risk-badge pill" id="banner-risk-badge">
+                    <i data-lucide="alert-triangle" class="risk-icon" id="banner-risk-icon"></i>
+                    <span class="risk-label" id="banner-risk-label">HIGH RISK</span>
+                </div>
+            </div>
+
+            <div class="banner-right">
+                <div class="action-recommendation">
+                    <span class="action-label">Recommended Action:</span>
+                    <span class="action-text" id="banner-action-text">Priority Compliance Queue — Request Source of Funds</span>
+                </div>
+                <div class="action-buttons">
+                    <button class="btn btn-primary" id="btn-generate-sar">
+                        <i data-lucide="file-text"></i>
+                        <span>Generate SAR</span>
+                    </button>
+                    <button class="btn btn-ghost" id="btn-freeze-account">
+                        <i data-lucide="lock"></i>
+                        <span>Freeze</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. Tab Navigation Bar -->
+        <nav class="tab-navigation">
+            <button class="tab-btn active" data-tab="tab-insights" id="tab-btn-1">
+                <i data-lucide="activity"></i>
+                <span>Insights Cockpit</span>
+                <span class="tab-num">1</span>
+            </button>
+            <button class="tab-btn" data-tab="tab-chains" id="tab-btn-2">
+                <i data-lucide="git-commit"></i>
+                <span>Chain Stepper</span>
+                <span class="tab-num">2</span>
+            </button>
+            <button class="tab-btn" data-tab="tab-explainer" id="tab-btn-3">
+                <i data-lucide="bar-chart-3"></i>
+                <span>GNNExplainer</span>
+                <span class="tab-num">3</span>
+            </button>
+            <button class="tab-btn" data-tab="tab-sar" id="tab-btn-4">
+                <i data-lucide="file-text"></i>
+                <span>SAR Risk Card</span>
+                <span class="tab-num">4</span>
+            </button>
+            <button class="tab-btn" data-tab="tab-benchmarks" id="tab-btn-5">
+                <i data-lucide="gauge"></i>
+                <span>Benchmarks</span>
+                <span class="tab-num">5</span>
+            </button>
+            <div class="active-tab-indicator" id="active-tab-indicator"></div>
+        </nav>
+
+        <!-- 5. Main Split View Layout (45% Left Insights / 55% Right Network Canvas) -->
+        <main class="main-content-split">
+            <!-- LEFT PANEL: Insights, Stepper, Explainer, SAR -->
+            <div class="left-panel-container" id="left-panel">
+                <!-- VIEW 1: Insights Cockpit (Default) -->
+                <div class="tab-content active" id="view-tab-insights">
+                    <!-- Probability Gauge & Stat Blocks -->
+                    <div class="card risk-metrics-card">
+                        <div class="card-header">
+                            <h3 class="card-title">GNN Mule Risk Assessment</h3>
+                            <span class="subgraph-count-chip mono" id="chip-subgraph-counts">12 Nodes · 164 Edges</span>
+                        </div>
+                        <div class="gauge-stats-row">
+                            <!-- Semicircular SVG Gauge -->
+                            <div class="gauge-container">
+                                <svg class="gauge-svg" viewBox="0 0 200 120" id="gauge-svg">
+                                    <defs>
+                                        <linearGradient id="gauge-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                            <stop offset="0%" stop-color="#2DD4BF" />
+                                            <stop offset="45%" stop-color="#FFC53D" />
+                                            <stop offset="70%" stop-color="#FF8A3D" />
+                                            <stop offset="100%" stop-color="#FF4D5E" />
+                                        </linearGradient>
+                                    </defs>
+                                    <!-- Background Arc -->
+                                    <path d="M 20 100 A 80 80 0 0 1 180 100" class="gauge-track"/>
+                                    <!-- Filled Arc -->
+                                    <path d="M 20 100 A 80 80 0 0 1 180 100" class="gauge-fill" id="gauge-fill-path"/>
+                                    <!-- Threshold Tick Line -->
+                                    <line x1="100" y1="20" x2="100" y2="34" class="gauge-threshold-tick" id="gauge-tick"/>
+                                </svg>
+                                <div class="gauge-center-content">
+                                    <span class="gauge-value mono" id="gauge-val-display">70.0%</span>
+                                    <span class="gauge-sublabel">Mule Probability</span>
+                                </div>
+                                <div class="threshold-chip" id="gauge-threshold-chip">
+                                    <span class="tick-label">Threshold 52.5%</span>
+                                    <span class="delta-label" id="gauge-delta-label">+17.5% Above</span>
+                                </div>
+                            </div>
+
+                            <!-- Stat Blocks -->
+                            <div class="stat-blocks-col">
+                                <div class="stat-block">
+                                    <span class="stat-label">CHAIN ROLE</span>
+                                    <div class="stat-value-badge" id="stat-chain-role">INTERMEDIARY MULE</div>
+                                </div>
+                                <div class="stat-block">
+                                    <span class="stat-label">ACTIVE CHAINS</span>
+                                    <span class="stat-value mono" id="stat-active-chains">5 Chains (Max 4 Hops)</span>
+                                </div>
+                                <div class="stat-block">
+                                    <span class="stat-label">FUND RETENTION</span>
+                                    <span class="stat-value mono accent-text" id="stat-retention">98.7% Retained</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Primary Feature Drivers (Horizontal Bar Chart) -->
+                    <div class="card feature-drivers-card">
+                        <div class="card-header">
+                            <h3 class="card-title">Primary Behavioral Drivers</h3>
+                            <span class="card-badge">Top 4 Features</span>
+                        </div>
+                        <div class="feature-bars-container" id="feature-bars-container">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Mini Chain Preview & Jump Button -->
+                    <div class="card quick-chain-card">
+                        <div class="card-header">
+                            <h3 class="card-title">Detected Layering Sequence</h3>
+                            <button class="btn btn-ghost btn-sm" id="btn-jump-chains">View Full Stepper &rarr;</button>
+                        </div>
+                        <div class="chain-preview-chip-row" id="quick-chain-preview">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW 2: Multi-Hop Chain Stepper -->
+                <div class="tab-content" id="view-tab-chains">
+                    <div class="card chain-stepper-card">
+                        <div class="card-header">
+                            <div>
+                                <h3 class="card-title">Sequential Laundering Motif Stepper</h3>
+                                <p class="card-subtitle">Verifies chronological fund forwarding ($A \to B \to C \to D$) with amount decay</p>
+                            </div>
+                            <div class="chain-selector-dropdown">
+                                <select id="chain-select-box" class="form-select">
+                                    <!-- Populated dynamically -->
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Stepper Timeline -->
+                        <div class="stepper-timeline" id="stepper-timeline">
+                            <!-- Populated dynamically with node chips, moving dot connectors, and metadata -->
+                        </div>
+
+                        <!-- 4-Cell Summary Footer -->
+                        <div class="stepper-summary-footer" id="stepper-summary-footer">
+                            <div class="summary-cell">
+                                <span class="summary-label">INITIAL INFLOW</span>
+                                <span class="summary-value mono" id="sum-initial-inflow">$15,833.52</span>
+                            </div>
+                            <div class="summary-cell">
+                                <span class="summary-label">FINAL OUTFLOW</span>
+                                <span class="summary-value mono" id="sum-final-outflow">$15,277.64</span>
+                            </div>
+                            <div class="summary-cell">
+                                <span class="summary-label">FEE HAIRCUT (DECAY)</span>
+                                <span class="summary-value mono critical-text" id="sum-decay">-$555.88 (3.5%)</span>
+                            </div>
+                            <div class="summary-cell">
+                                <span class="summary-label">TOTAL SPAN</span>
+                                <span class="summary-value mono" id="sum-span">78.5 Hours</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW 3: GNNExplainer Details -->
+                <div class="tab-content" id="view-tab-explainer">
+                    <div class="card explainer-full-card">
+                        <div class="card-header">
+                            <div>
+                                <h3 class="card-title">Explainable GNN Attributions</h3>
+                                <p class="card-subtitle">Normalized mutual information attribution across the 8 structural features and incident edges</p>
+                            </div>
+                        </div>
+
+                        <div class="all-features-list" id="all-features-list">
+                            <!-- Populated dynamically -->
+                        </div>
+
+                        <h4 class="section-title">Top Attributed Counterparty Flows</h4>
+                        <div class="table-container">
+                            <table class="data-table" id="counterparty-table">
+                                <thead>
+                                    <tr>
+                                        <th>FLOW DIRECTION</th>
+                                        <th>COUNTERPARTY</th>
+                                        <th>ATTRIBUTION WEIGHT</th>
+                                        <th>IMPACT</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="counterparty-table-body">
+                                    <!-- Populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW 4: SAR Risk Card & Compliance Narrative -->
+                <div class="tab-content" id="view-tab-sar">
+                    <div class="card sar-card">
+                        <div class="card-header">
+                            <div>
+                                <h3 class="card-title">Official AML Analyst Risk Card</h3>
+                                <p class="card-subtitle">Synthesized narrative ready for Suspicious Activity Report (SAR) filing</p>
+                            </div>
+                            <div class="sar-toolbar">
+                                <button class="btn btn-secondary btn-sm" id="btn-copy-sar" title="Copy to Clipboard">
+                                    <i data-lucide="copy" id="copy-sar-icon"></i>
+                                    <span id="copy-sar-text">Copy SAR</span>
+                                </button>
+                                <div class="dropdown-wrapper">
+                                    <button class="btn btn-primary btn-sm" id="btn-download-sar">
+                                        <i data-lucide="download"></i>
+                                        <span>Download</span>
+                                    </button>
+                                    <div class="dropdown-menu hidden" id="download-dropdown">
+                                        <button class="dropdown-item" data-format="txt">Plain Text (.txt)</button>
+                                        <button class="dropdown-item" data-format="json">Structured JSON (.json)</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="sar-editor-wrapper">
+                            <textarea id="sar-narrative-textarea" class="sar-textarea mono" rows="14" spellcheck="false"></textarea>
+                            <div class="textarea-footer">
+                                <span class="char-counter mono" id="char-counter">0 characters</span>
+                                <span class="audit-note">Audit Record: Hash-Signed by GraphSAGE v1.0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW 5: Model Benchmarks & Comparison -->
+                <div class="tab-content" id="view-tab-benchmarks">
+                    <div class="card benchmark-card">
+                        <div class="card-header">
+                            <h3 class="card-title">Frozen 20% Test Split Benchmark Comparison</h3>
+                            <span class="card-badge">103,016 Accounts · 1,271 Mules</span>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table" id="benchmark-table">
+                                <thead>
+                                    <tr>
+                                        <th>MODEL ARCHITECTURE</th>
+                                        <th>VAL PR-AUC</th>
+                                        <th>TEST PR-AUC</th>
+                                        <th>TEST PRECISION</th>
+                                        <th>TEST RECALL</th>
+                                        <th>F1 SCORE</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Random Guessing Floor</td>
+                                        <td class="mono">0.0123</td>
+                                        <td class="mono">0.0123</td>
+                                        <td class="mono">0.0123</td>
+                                        <td class="mono">1.0000</td>
+                                        <td class="mono">0.0243</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Milestone 2 Baseline (XGBoost)</td>
+                                        <td class="mono">—</td>
+                                        <td class="mono">0.0914</td>
+                                        <td class="mono">0.0500</td>
+                                        <td class="mono">0.6700</td>
+                                        <td class="mono">0.0900</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Milestone 3 Baseline (XGBoost 70%)</td>
+                                        <td class="mono">0.0855</td>
+                                        <td class="mono">0.0834</td>
+                                        <td class="mono">0.1178</td>
+                                        <td class="mono">0.1880</td>
+                                        <td class="mono">0.1448</td>
+                                    </tr>
+                                    <tr class="winner-row">
+                                        <td class="winner-label"><i data-lucide="trophy" class="trophy-icon"></i> <strong>GraphSAGE (2-layer GNN)</strong></td>
+                                        <td class="mono accent-text"><strong>0.2091</strong></td>
+                                        <td class="mono accent-text"><strong>0.1884</strong></td>
+                                        <td class="mono accent-text"><strong>0.2827</strong></td>
+                                        <td class="mono">0.1495</td>
+                                        <td class="mono accent-text"><strong>0.1956</strong></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Benchmark PR Curve Visualizer -->
+                        <div class="pr-curve-container">
+                            <h4 class="section-title">Precision-Recall Curve Comparison</h4>
+                            <div class="chart-embed-box">
+                                <img src="/outputs/figures/pr_curve_comparison.png" alt="PR Curve Comparison" class="responsive-img" onerror="this.style.display='none'">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT PANEL: Network Canvas (55%) -->
+            <div class="right-panel-container" id="right-panel">
+                <div class="canvas-wrapper">
+                    <!-- Top Floating Control Cluster -->
+                    <div class="canvas-controls-cluster">
+                        <button class="canvas-btn" id="btn-zoom-in" title="Zoom In"><i data-lucide="zoom-in"></i></button>
+                        <button class="canvas-btn" id="btn-zoom-out" title="Zoom Out"><i data-lucide="zoom-out"></i></button>
+                        <button class="canvas-btn" id="btn-fit-screen" title="Fit to Screen"><i data-lucide="maximize-2"></i></button>
+                        <div class="divider-v"></div>
+                        <button class="canvas-btn" id="btn-toggle-physics" title="Toggle Layout Physics"><i data-lucide="play" id="physics-icon"></i></button>
+                        <button class="canvas-btn" id="btn-table-alt" title="Toggle Accessible Table View"><i data-lucide="list"></i></button>
+                    </div>
+
+                    <!-- Canvas -->
+                    <canvas id="network-canvas" class="network-canvas"></canvas>
+
+                    <!-- Accessible Table Alternative (WCAG 2.1 AA) -->
+                    <div class="canvas-table-alt hidden" id="canvas-table-alt">
+                        <div class="table-alt-header">
+                            <h4>2-Hop Neighborhood Accounts</h4>
+                            <button class="btn btn-ghost btn-sm" id="btn-close-table-alt">&times; Close Table</button>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table" id="accessible-nodes-table">
+                                <thead>
+                                    <tr>
+                                        <th>ACCOUNT ID</th>
+                                        <th>ROLE</th>
+                                        <th>CONNECTED EDGES</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="accessible-nodes-tbody">
+                                    <!-- Populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Floating Frosted Glass Legend -->
+                    <div class="canvas-legend-chip">
+                        <div class="legend-item">
+                            <span class="legend-dot dot-target"></span>
+                            <span class="legend-label">Target Mule</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-dot dot-chain"></span>
+                            <span class="legend-label">Chain Node</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-dot dot-counterparty"></span>
+                            <span class="legend-label">Counterparty</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-line line-chain"></span>
+                            <span class="legend-label">Layering Flow</span>
+                        </div>
+                    </div>
+
+                    <!-- Node Tooltip (Elevation 2) -->
+                    <div class="node-tooltip hidden" id="node-tooltip">
+                        <div class="tooltip-header">
+                            <span class="tooltip-title mono" id="tt-id">811C2F680</span>
+                            <span class="tooltip-badge" id="tt-role">TARGET</span>
+                        </div>
+                        <div class="tooltip-row">
+                            <span class="tt-label">Total Flow:</span>
+                            <span class="tt-val mono" id="tt-flow">$31,466.97</span>
+                        </div>
+                        <div class="tooltip-row">
+                            <span class="tt-label">Holding Time:</span>
+                            <span class="tt-val mono" id="tt-holding">8.25 hrs</span>
+                        </div>
+                        <div class="tooltip-row">
+                            <span class="tt-label">GNN Risk:</span>
+                            <span class="tt-val mono accent-text" id="tt-score">70.0%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Toast Notifications Container -->
+        <div class="toast-container" id="toast-container"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/app.js"></script>
+</body>
+</html>

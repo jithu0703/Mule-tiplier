@@ -41,7 +41,7 @@ class TemporalChainDetector:
         # Filter and prepare transactions
         sub = df[df["amount_paid_usd"] >= min_amount].copy()
         if not pd.api.types.is_datetime64_any_dtype(sub["Timestamp"]):
-            sub["Timestamp"] = pd.to_datetime(sub["Timestamp"])
+            sub["Timestamp"] = pd.to_datetime(sub["Timestamp"], format="%Y-%m-%d %H:%M:%S")
         sub = sub.sort_values("Timestamp")
 
         self.transactions = sub
@@ -49,15 +49,21 @@ class TemporalChainDetector:
         self.out_edges: Dict[str, List[Tuple[str, pd.Timestamp, float, int]]] = defaultdict(list)
         self.in_edges: Dict[str, List[Tuple[str, pd.Timestamp, float, int]]] = defaultdict(list)
 
-        for _, row in sub.iterrows():
-            f = str(row["from_Account"])
-            t = str(row["to_Account"])
-            ts = row["Timestamp"]
-            amt = float(row["amount_paid_usd"])
-            is_l = int(row.get("Is Laundering", 0))
+        is_l_col = sub["Is Laundering"].values if "Is Laundering" in sub.columns else np.zeros(len(sub), dtype=int)
+        from_accs = sub["from_Account"].astype(str).values
+        to_accs = sub["to_Account"].astype(str).values
+        ts_vals = sub["Timestamp"].tolist()
+        amt_vals = sub["amount_paid_usd"].astype(float).values
 
-            self.out_edges[f].append((t, ts, amt, is_l))
-            self.in_edges[t].append((f, ts, amt, is_l))
+        for f, t, ts, amt, is_l in zip(from_accs, to_accs, ts_vals, amt_vals, is_l_col):
+            self.out_edges[f].append((t, ts, amt, int(is_l)))
+            self.in_edges[t].append((f, ts, amt, int(is_l)))
+
+    @staticmethod
+    def _to_hours(diff) -> float:
+        if hasattr(diff, "total_seconds"):
+            return diff.total_seconds() / 3600.0
+        return float(diff / np.timedelta64(1, "s")) / 3600.0
 
     def find_chains_from_account(
         self,
@@ -77,7 +83,7 @@ class TemporalChainDetector:
                     "accounts": [path[0]["from"]] + [p["to"] for p in path],
                     "start_time": path[0]["timestamp"],
                     "end_time": path[-1]["timestamp"],
-                    "duration_hours": (path[-1]["timestamp"] - path[0]["timestamp"]).total_seconds() / 3600.0,
+                    "duration_hours": round(self._to_hours(path[-1]["timestamp"] - path[0]["timestamp"]), 2),
                     "initial_amount": path[0]["amount"],
                     "final_amount": path[-1]["amount"],
                     "amount_retention": path[-1]["amount"] / path[0]["amount"] if path[0]["amount"] > 0 else 0.0,
@@ -99,10 +105,10 @@ class TemporalChainDetector:
 
                 if last_step is not None:
                     # Time condition
-                    time_diff = (ts - last_time).total_seconds() / 3600.0
+                    time_diff = self._to_hours(ts - last_time)
                     if time_diff <= 0 or time_diff > self.max_hop_hours:
                         continue
-                    total_dur = (ts - path[0]["timestamp"]).total_seconds() / 3600.0
+                    total_dur = self._to_hours(ts - path[0]["timestamp"])
                     if total_dur > self.max_total_hours:
                         continue
 
