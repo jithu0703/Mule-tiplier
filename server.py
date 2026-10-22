@@ -303,3 +303,8 @@ app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
 def serve_index():
     return FileResponse("frontend/index.html")
 
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
+

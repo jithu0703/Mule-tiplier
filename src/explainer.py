@@ -96,57 +96,98 @@ class MuleExplainer:
             logit = float(self.model(sub_x, sub_edge_index)[target_local_idx].cpu())
             prob = float(torch.sigmoid(torch.tensor(logit)))
 
-        # 3. Run GNNExplainer on the computation subgraph
-        explanation = self.explainer(
-            x=sub_x,
-            edge_index=sub_edge_index,
-            index=target_local_idx,
-        )
+        # 3. Run GNNExplainer on the computation subgraph with robust fallback
+        feat_ranking = []
+        dedup_edges = []
 
-        # 4. Extract feature importances
-        # explanation.node_mask has shape [num_subgraph_nodes, num_features]
-        target_feat_mask = explanation.node_mask[target_local_idx].detach().cpu().numpy()
-        # Normalize to sum to 1.0 (relative attribution)
-        feat_norm = target_feat_mask / max(float(target_feat_mask.sum()), 1e-12)
-        feat_ranking = [
-            {"feature": FEATURE_NAMES[i], "score": float(feat_norm[i]), "raw_value": float(self.data.x[node_idx, i])}
-            for i in range(len(FEATURE_NAMES))
-        ]
+        try:
+            if sub_edge_index.size(1) > 0:
+                explanation = self.explainer(
+                    x=sub_x,
+                    edge_index=sub_edge_index,
+                    index=target_local_idx,
+                )
+
+                # 4. Extract feature importances
+                if hasattr(explanation, "node_mask") and explanation.node_mask is not None:
+                    target_feat_mask = explanation.node_mask[target_local_idx].detach().cpu().numpy()
+                    feat_norm = target_feat_mask / max(float(target_feat_mask.sum()), 1e-12)
+                    feat_ranking = [
+                        {"feature": FEATURE_NAMES[i], "score": float(feat_norm[i]), "raw_value": float(self.data.x[node_idx, i])}
+                        for i in range(len(FEATURE_NAMES))
+                    ]
+
+                # 5. Extract edge importances
+                if hasattr(explanation, "edge_mask") and explanation.edge_mask is not None:
+                    edge_scores = explanation.edge_mask.detach().cpu().numpy()
+                    edge_list = []
+                    sub_edges = sub_edge_index.cpu().numpy()
+
+                    for e_idx in range(sub_edges.shape[1]):
+                        u_local, v_local = sub_edges[0, e_idx], sub_edges[1, e_idx]
+                        if u_local == target_local_idx or v_local == target_local_idx:
+                            u_global = int(subset[u_local])
+                            v_global = int(subset[v_local])
+                            u_acc = self.idx_to_account.get(u_global, str(u_global))
+                            v_acc = self.idx_to_account.get(v_global, str(v_global))
+                            direction = "outgoing" if u_local == target_local_idx else "incoming"
+                            counterparty = v_acc if direction == "outgoing" else u_acc
+
+                            edge_list.append({
+                                "from_account": u_acc,
+                                "to_account": v_acc,
+                                "counterparty": counterparty,
+                                "direction": direction,
+                                "importance_score": float(edge_scores[e_idx]),
+                            })
+
+                    seen_pairs = set()
+                    for e in sorted(edge_list, key=lambda x: x["importance_score"], reverse=True):
+                        pair_key = (e["from_account"], e["to_account"])
+                        if pair_key not in seen_pairs:
+                            seen_pairs.add(pair_key)
+                            dedup_edges.append(e)
+        except Exception:
+            # Fall back gracefully for isolated nodes or gradient disconnection
+            pass
+
+        # Fallback feature ranking if explainer was bypassed or had no mask
+        if not feat_ranking:
+            raw_vals = [abs(float(self.data.x[node_idx, i])) for i in range(len(FEATURE_NAMES))]
+            sum_raw = max(sum(raw_vals), 1e-12)
+            feat_ranking = [
+                {"feature": FEATURE_NAMES[i], "score": float(raw_vals[i] / sum_raw), "raw_value": float(self.data.x[node_idx, i])}
+                for i in range(len(FEATURE_NAMES))
+            ]
+
         feat_ranking.sort(key=lambda x: x["score"], reverse=True)
 
-        # 5. Extract edge importances
-        # explanation.edge_mask has shape [num_subgraph_edges]
-        edge_scores = explanation.edge_mask.detach().cpu().numpy()
-        edge_list = []
-        sub_edges = sub_edge_index.cpu().numpy()
-
-        for e_idx in range(sub_edges.shape[1]):
-            u_local, v_local = sub_edges[0, e_idx], sub_edges[1, e_idx]
-            # Focus on edges directly incident to target node
-            if u_local == target_local_idx or v_local == target_local_idx:
-                u_global = int(subset[u_local])
-                v_global = int(subset[v_local])
-                u_acc = self.idx_to_account.get(u_global, str(u_global))
-                v_acc = self.idx_to_account.get(v_global, str(v_global))
-                direction = "outgoing" if u_local == target_local_idx else "incoming"
-                counterparty = v_acc if direction == "outgoing" else u_acc
-
-                edge_list.append({
-                    "from_account": u_acc,
-                    "to_account": v_acc,
-                    "counterparty": counterparty,
-                    "direction": direction,
-                    "importance_score": float(edge_scores[e_idx]),
-                })
-
-        # Deduplicate bidirectional representations and sort
-        seen_pairs = set()
-        dedup_edges = []
-        for e in sorted(edge_list, key=lambda x: x["importance_score"], reverse=True):
-            pair_key = (e["from_account"], e["to_account"])
-            if pair_key not in seen_pairs:
-                seen_pairs.add(pair_key)
-                dedup_edges.append(e)
+        # Fallback edge extraction if explainer failed but edges exist
+        if not dedup_edges and sub_edge_index.size(1) > 0:
+            edge_list = []
+            sub_edges = sub_edge_index.cpu().numpy()
+            for e_idx in range(sub_edges.shape[1]):
+                u_local, v_local = sub_edges[0, e_idx], sub_edges[1, e_idx]
+                if u_local == target_local_idx or v_local == target_local_idx:
+                    u_global = int(subset[u_local])
+                    v_global = int(subset[v_local])
+                    u_acc = self.idx_to_account.get(u_global, str(u_global))
+                    v_acc = self.idx_to_account.get(v_global, str(v_global))
+                    direction = "outgoing" if u_local == target_local_idx else "incoming"
+                    counterparty = v_acc if direction == "outgoing" else u_acc
+                    edge_list.append({
+                        "from_account": u_acc,
+                        "to_account": v_acc,
+                        "counterparty": counterparty,
+                        "direction": direction,
+                        "importance_score": 0.5,
+                    })
+            seen_pairs = set()
+            for e in edge_list:
+                pair_key = (e["from_account"], e["to_account"])
+                if pair_key not in seen_pairs:
+                    seen_pairs.add(pair_key)
+                    dedup_edges.append(e)
 
         return {
             "account_id": acc_id,

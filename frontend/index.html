@@ -15,7 +15,7 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     
     <!-- Stylesheet -->
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=6">
 </head>
 <body>
     <div id="app" class="app-layout">
@@ -263,15 +263,22 @@
                 <!-- VIEW 2: Multi-Hop Chain Stepper -->
                 <div class="tab-content" id="view-tab-chains">
                     <div class="card chain-stepper-card">
-                        <div class="card-header">
-                            <div>
+                        <div class="card-header stepper-header">
+                            <div class="stepper-title-group">
                                 <h3 class="card-title">Sequential Laundering Motif Stepper</h3>
                                 <p class="card-subtitle">Verifies chronological fund forwarding (A &rarr; B &rarr; C &rarr; D) with amount decay</p>
                             </div>
-                            <div class="chain-selector-dropdown">
-                                <select id="chain-select-box" class="form-select">
+                            <div class="chain-selector-dropdown" id="chain-selector-dropdown">
+                                <select id="chain-select-box" class="form-select visually-hidden" aria-hidden="true" tabindex="-1">
                                     <!-- Populated dynamically -->
                                 </select>
+                                <button type="button" class="custom-select-trigger" id="custom-chain-trigger" aria-haspopup="listbox" aria-expanded="false">
+                                    <span class="custom-select-label" id="custom-chain-label">Select Chain...</span>
+                                    <i data-lucide="chevron-down" class="custom-select-chevron"></i>
+                                </button>
+                                <div class="custom-select-menu hidden" id="custom-chain-menu" role="listbox" tabindex="-1">
+                                    <!-- Populated dynamically -->
+                                </div>
                             </div>
                         </div>
 
@@ -284,19 +291,22 @@
                         <div class="stepper-summary-footer" id="stepper-summary-footer">
                             <div class="summary-cell">
                                 <span class="summary-label">INITIAL INFLOW</span>
-                                <span class="summary-value mono" id="sum-initial-inflow">$15,833.52</span>
+                                <span class="summary-value mono" id="sum-initial-inflow">$0.00</span>
                             </div>
                             <div class="summary-cell">
                                 <span class="summary-label">FINAL OUTFLOW</span>
-                                <span class="summary-value mono" id="sum-final-outflow">$15,277.64</span>
+                                <span class="summary-value mono" id="sum-final-outflow">$0.00</span>
                             </div>
                             <div class="summary-cell">
                                 <span class="summary-label">FEE HAIRCUT (DECAY)</span>
-                                <span class="summary-value mono critical-text" id="sum-decay">-$555.88 (3.5%)</span>
+                                <span class="summary-value mono critical-text" id="sum-decay">
+                                    <i data-lucide="trending-down" class="summary-decay-icon"></i>
+                                    <span>-$0.00 (0.0%)</span>
+                                </span>
                             </div>
                             <div class="summary-cell">
                                 <span class="summary-label">TOTAL SPAN</span>
-                                <span class="summary-value mono" id="sum-span">78.5 Hours</span>
+                                <span class="summary-value mono" id="sum-span">0m</span>
                             </div>
                         </div>
                     </div>
@@ -337,41 +347,379 @@
 
                 <!-- VIEW 4: SAR Risk Card & Compliance Narrative -->
                 <div class="tab-content" id="view-tab-sar">
+                    <!-- Main Master SAR Card -->
                     <div class="card sar-card">
-                        <div class="card-header">
-                            <div>
-                                <h3 class="card-title">Official AML Analyst Risk Card</h3>
-                                <p class="card-subtitle">Synthesized narrative ready for Suspicious Activity Report (SAR) filing</p>
+                        <!-- Top Header & Actions -->
+                        <div class="sar-header-row">
+                            <div class="sar-header-meta">
+                                <div class="sar-title-group">
+                                    <h3 class="card-title">Official AML Analyst Risk Card</h3>
+                                    <span class="sar-ref-chip mono" id="sar-ref-chip" title="Click to copy case reference">
+                                        <i data-lucide="hash"></i>
+                                        <span id="sar-case-id-text">SAR-REF-811C2F680</span>
+                                    </span>
+                                </div>
+                                <p class="card-subtitle">Synthesized forensic evidence ready for Suspicious Activity Report (SAR) filing</p>
                             </div>
-                            <div class="sar-toolbar">
-                                <button class="btn btn-secondary btn-sm" id="btn-copy-sar" title="Copy to Clipboard">
-                                    <i data-lucide="copy" id="copy-sar-icon"></i>
-                                    <span id="copy-sar-text">Copy SAR</span>
-                                </button>
-                                <div class="dropdown-wrapper">
-                                    <button class="btn btn-primary btn-sm" id="btn-download-sar">
-                                        <i data-lucide="download"></i>
-                                        <span>Download</span>
+
+                            <div class="sar-header-actions">
+                                <!-- Mode Selector Tabs -->
+                                <div class="sar-mode-selector" role="tablist" aria-label="SAR View Modes">
+                                    <button class="sar-mode-btn active" data-mode="dossier" id="sar-mode-btn-dossier" role="tab" aria-selected="true">
+                                        <i data-lucide="file-text"></i>
+                                        <span>Dossier</span>
                                     </button>
-                                    <div class="dropdown-menu hidden" id="download-dropdown">
-                                        <button class="dropdown-item" data-format="txt">
-                                            <i data-lucide="file-text"></i>
-                                            <span>Plain Text (.txt)</span>
+                                    <button class="sar-mode-btn" data-mode="composer" id="sar-mode-btn-composer" role="tab" aria-selected="false">
+                                        <i data-lucide="edit-3"></i>
+                                        <span>Composer</span>
+                                    </button>
+                                    <button class="sar-mode-btn" data-mode="raw" id="sar-mode-btn-raw" role="tab" aria-selected="false">
+                                        <i data-lucide="terminal"></i>
+                                        <span>Raw (.txt)</span>
+                                    </button>
+                                </div>
+
+                                <div class="sar-toolbar">
+                                    <!-- Copy Button with dropdown -->
+                                    <div class="dropdown-wrapper">
+                                        <button class="btn btn-secondary btn-sm" id="btn-copy-sar" title="Copy to Clipboard">
+                                            <i data-lucide="copy" id="copy-sar-icon"></i>
+                                            <span id="copy-sar-text">Copy SAR</span>
+                                            <i data-lucide="chevron-down" class="btn-chevron"></i>
                                         </button>
-                                        <button class="dropdown-item" data-format="json">
-                                            <i data-lucide="code"></i>
-                                            <span>Structured JSON (.json)</span>
+                                        <div class="dropdown-menu hidden" id="copy-dropdown">
+                                            <button class="dropdown-item" id="btn-copy-opt-narrative">
+                                                <i data-lucide="file-text"></i>
+                                                <span>Copy Narrative Only</span>
+                                            </button>
+                                            <button class="dropdown-item" id="btn-copy-opt-dossier">
+                                                <i data-lucide="file-spreadsheet"></i>
+                                                <span>Copy Markdown Dossier</span>
+                                            </button>
+                                            <button class="dropdown-item" id="btn-copy-opt-raw">
+                                                <i data-lucide="terminal"></i>
+                                                <span>Copy Raw ASCII Report</span>
+                                            </button>
+                                            <button class="dropdown-item" id="btn-copy-opt-json">
+                                                <i data-lucide="code"></i>
+                                                <span>Copy Structured JSON</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Download Dropdown -->
+                                    <div class="dropdown-wrapper">
+                                        <button class="btn btn-primary btn-sm" id="btn-download-sar">
+                                            <i data-lucide="download"></i>
+                                            <span>Export</span>
+                                            <i data-lucide="chevron-down" class="btn-chevron"></i>
+                                        </button>
+                                        <div class="dropdown-menu hidden" id="download-dropdown">
+                                            <button class="dropdown-item" data-format="txt">
+                                                <i data-lucide="file-text"></i>
+                                                <span>Plain Text (.txt)</span>
+                                            </button>
+                                            <button class="dropdown-item" data-format="md">
+                                                <i data-lucide="file-code"></i>
+                                                <span>Compliance Markdown (.md)</span>
+                                            </button>
+                                            <button class="dropdown-item" data-format="json">
+                                                <i data-lucide="code"></i>
+                                                <span>Structured JSON (.json)</span>
+                                            </button>
+                                            <button class="dropdown-item" data-format="print">
+                                                <i data-lucide="printer"></i>
+                                                <span>Print / Save PDF</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Case Key Metrics Strip (High Density Overview) -->
+                        <div class="sar-metrics-strip" id="sar-metrics-strip">
+                            <div class="sar-metric-tile">
+                                <span class="sar-metric-label">MULE PROBABILITY</span>
+                                <div class="sar-metric-body">
+                                    <span class="sar-metric-val mono" id="sar-tile-prob">70.0%</span>
+                                    <span class="sar-metric-tag badge-critical" id="sar-tile-prob-delta">+17.5%</span>
+                                </div>
+                                <span class="sar-metric-sub" id="sar-tile-threshold">Threshold 52.5%</span>
+                            </div>
+
+                            <div class="sar-metric-tile">
+                                <span class="sar-metric-label">TYPOLOGY MOTIF</span>
+                                <div class="sar-metric-body">
+                                    <span class="sar-metric-val" id="sar-tile-role">INTERMEDIARY MULE</span>
+                                </div>
+                                <span class="sar-metric-sub mono" id="sar-tile-chains">2-Hop Sequential Chain</span>
+                            </div>
+
+                            <div class="sar-metric-tile">
+                                <span class="sar-metric-label">FLOW EXPOSURE</span>
+                                <div class="sar-metric-body">
+                                    <span class="sar-metric-val mono" id="sar-tile-retention">99.4%</span>
+                                    <span class="sar-metric-tag" id="sar-tile-haircut">-$88.33 Haircut</span>
+                                </div>
+                                <span class="sar-metric-sub mono" id="sar-tile-flow-amt">$15,633 → $15,545</span>
+                            </div>
+
+                            <div class="sar-metric-tile">
+                                <span class="sar-metric-label">DISPOSITION STATUS</span>
+                                <div class="sar-metric-body">
+                                    <span class="sar-disposition-pill" id="sar-tile-status">SAR READY</span>
+                                </div>
+                                <span class="sar-metric-sub" id="sar-tile-action">Priority Compliance Queue</span>
+                            </div>
+                        </div>
+
+                        <!-- SUBVIEW 1: Formal Compliance Dossier -->
+                        <div class="sar-subview active" id="sar-subview-dossier">
+                            <!-- Section 1: Subject Profile -->
+                            <div class="sar-section">
+                                <div class="sar-section-header">
+                                    <h4 class="sar-section-title">
+                                        <span class="section-idx">1</span>
+                                        <span>Subject Identification & Regulatory Classification</span>
+                                    </h4>
+                                    <span class="sar-section-badge" id="sar-dossier-tier-badge">HIGH RISK</span>
+                                </div>
+                                <div class="sar-profile-grid">
+                                    <div class="sar-grid-item">
+                                        <span class="sar-grid-label">Subject Account ID</span>
+                                        <span class="sar-grid-val mono" id="sar-dossier-acc">811C2F680</span>
+                                    </div>
+                                    <div class="sar-grid-item">
+                                        <span class="sar-grid-label">Regulatory Risk Tier</span>
+                                        <span class="sar-grid-val" id="sar-dossier-tier">HIGH RISK</span>
+                                    </div>
+                                    <div class="sar-grid-item">
+                                        <span class="sar-grid-label">Recommended Action</span>
+                                        <span class="sar-grid-val" id="sar-dossier-action">Priority Compliance Queue</span>
+                                    </div>
+                                    <div class="sar-grid-item">
+                                        <span class="sar-grid-label">Forensic Classification</span>
+                                        <span class="sar-grid-val" id="sar-dossier-classification">Confirmed Pass-Through Mule</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Section 2: GNN Attribution -->
+                            <div class="sar-section">
+                                <div class="sar-section-header">
+                                    <h4 class="sar-section-title">
+                                        <span class="section-idx">2</span>
+                                        <span>Graph Neural Network Forensic Attribution (GraphSAGE)</span>
+                                    </h4>
+                                    <span class="sar-section-sub mono" id="sar-dossier-subgraph-counts">12 Nodes · 164 Edges</span>
+                                </div>
+                                <div class="sar-gnn-summary-row">
+                                    <div class="sar-gnn-stat-box">
+                                        <span class="sar-box-label">GNN Mule Probability</span>
+                                        <span class="sar-box-val mono" id="sar-dossier-prob-display">70.0%</span>
+                                        <span class="sar-box-sub" id="sar-dossier-thresh-display">Threshold: 52.5%</span>
+                                    </div>
+                                    <div class="sar-gnn-stat-box">
+                                        <span class="sar-box-label">Raw Logit Score</span>
+                                        <span class="sar-box-val mono" id="sar-dossier-logit-display">+0.8490</span>
+                                        <span class="sar-box-sub">Sigmoid Decided</span>
+                                    </div>
+                                    <div class="sar-gnn-features-box">
+                                        <span class="sar-box-label">Primary Attributed Behavioral Drivers</span>
+                                        <div class="sar-feature-chips" id="sar-dossier-feature-chips">
+                                            <!-- Dynamic feature chips -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Section 3: Sequential Laundering Chain Evidence -->
+                            <div class="sar-section">
+                                <div class="sar-section-header">
+                                    <h4 class="sar-section-title">
+                                        <span class="section-idx">3</span>
+                                        <span>Multi-Hop Layering Motif Evidence</span>
+                                    </h4>
+                                    <span class="sar-section-badge" id="sar-dossier-chain-status">CONFIRMED IN CHAIN</span>
+                                </div>
+                                <div class="sar-chain-path-box">
+                                    <div class="sar-chain-breadcrumbs" id="sar-dossier-chain-steps">
+                                        <!-- Step breadcrumbs populated dynamically -->
+                                    </div>
+                                    <div class="sar-chain-stats-strip">
+                                        <div class="sar-chain-stat">
+                                            <span class="stat-lbl">Inflow Deposited</span>
+                                            <span class="stat-val mono" id="sar-chain-inflow">$15,633.45</span>
+                                        </div>
+                                        <div class="sar-chain-stat">
+                                            <span class="stat-lbl">Disbursed Outflow</span>
+                                            <span class="stat-val mono" id="sar-chain-outflow">$15,545.12</span>
+                                        </div>
+                                        <div class="sar-chain-stat">
+                                            <span class="stat-lbl">Preservation Rate</span>
+                                            <span class="stat-val mono" id="sar-chain-retention">99.4%</span>
+                                        </div>
+                                        <div class="sar-chain-stat">
+                                            <span class="stat-lbl">Elapsed Time</span>
+                                            <span class="stat-val mono" id="sar-chain-duration">38.8 hrs</span>
+                                        </div>
+                                        <div class="sar-chain-stat">
+                                            <span class="stat-lbl">Intermediary Haircut</span>
+                                            <span class="stat-val mono" id="sar-chain-haircut">$88.33</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Section 4: Top Suspicious Counterparties -->
+                            <div class="sar-section">
+                                <div class="sar-section-header">
+                                    <h4 class="sar-section-title">
+                                        <span class="section-idx">4</span>
+                                        <span>Top Attributed Counterparty Flows</span>
+                                    </h4>
+                                    <span class="sar-section-sub">Ranked by GNN topological importance</span>
+                                </div>
+                                <div class="sar-table-wrapper">
+                                    <table class="sar-counterparties-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Direction</th>
+                                                <th>Counterparty Account</th>
+                                                <th>Attribution Score</th>
+                                                <th>Graph Focus</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="sar-dossier-counterparties-tbody">
+                                            <!-- Dynamic rows -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Section 5: Official FinCEN SAR Narrative -->
+                            <div class="sar-section">
+                                <div class="sar-section-header">
+                                    <h4 class="sar-section-title">
+                                        <span class="section-idx">5</span>
+                                        <span>Official Synthesized Compliance Narrative (SAR Ready)</span>
+                                    </h4>
+                                    <div class="sar-section-actions">
+                                        <button class="btn btn-ghost btn-sm" id="btn-jump-composer">
+                                            <i data-lucide="edit-3"></i>
+                                            <span>Edit in Composer</span>
+                                        </button>
+                                        <button class="btn btn-secondary btn-sm" id="btn-copy-dossier-narrative">
+                                            <i data-lucide="copy"></i>
+                                            <span>Copy Narrative</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="sar-narrative-callout" id="sar-dossier-narrative-text">
+                                    <!-- Narrative text populated dynamically -->
+                                </div>
+                            </div>
+
+                            <!-- Section 6: Audit Record & Investigator Notes -->
+                            <div class="sar-audit-footer">
+                                <div class="sar-audit-signature">
+                                    <i data-lucide="shield-check" class="audit-icon"></i>
+                                    <div>
+                                        <div class="audit-line-1">Model Inference Signed: GraphSAGE v1.0 (Frozen 20% Test Split Benchmark)</div>
+                                        <div class="audit-line-2 mono" id="sar-audit-hash">SHA-256 Digest: 811c2f680e927c8a...verified</div>
+                                    </div>
+                                </div>
+                                <div class="sar-investigator-input-row">
+                                    <label for="sar-analyst-notes" class="sar-analyst-label">Analyst Audit Notes (Optional / Included in Export):</label>
+                                    <input type="text" id="sar-analyst-notes" class="sar-analyst-input" placeholder="e.g. Escrow source requested; counterparty account subpoena pending..." />
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SUBVIEW 2: Narrative Composer & Validator -->
+                        <div class="sar-subview" id="sar-subview-composer">
+                            <div class="composer-toolbar">
+                                <div class="composer-templates-col">
+                                    <span class="composer-label">Typology Narrative Templates:</span>
+                                    <div class="composer-template-btns">
+                                        <button class="composer-chip-btn active" data-template="default" id="tpl-btn-default">
+                                            <span>Default AI Synthesis</span>
+                                        </button>
+                                        <button class="composer-chip-btn" data-template="passthrough" id="tpl-btn-passthrough">
+                                            <span>FinCEN Rapid Pass-Through</span>
+                                        </button>
+                                        <button class="composer-chip-btn" data-template="structuring" id="tpl-btn-structuring">
+                                            <span>Structuring & Smurfing</span>
+                                        </button>
+                                        <button class="composer-chip-btn" data-template="hub" id="tpl-btn-hub">
+                                            <span>High-Velocity Hub</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="composer-tokens-col">
+                                    <span class="composer-label">Insert Live Data Tokens:</span>
+                                    <div class="composer-token-chips" id="composer-token-chips">
+                                        <button class="token-chip" data-token="account" title="Insert Subject Account ID">+ Account</button>
+                                        <button class="token-chip" data-token="prob" title="Insert Mule Probability %">+ Probability</button>
+                                        <button class="token-chip" data-token="path" title="Insert Chain Account Path">+ Chain Path</button>
+                                        <button class="token-chip" data-token="inflow" title="Insert Inflow Amount">+ Inflow $</button>
+                                        <button class="token-chip" data-token="outflow" title="Insert Outflow Amount">+ Outflow $</button>
+                                        <button class="token-chip" data-token="retention" title="Insert Fund Retention %">+ Retention %</button>
+                                        <button class="token-chip" data-token="hours" title="Insert Elapsed Duration Hours">+ Duration</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="sar-editor-wrapper">
+                                <textarea id="sar-narrative-textarea" class="sar-textarea mono" rows="13" spellcheck="false" placeholder="Generating official AML Suspicious Activity Report narrative..."></textarea>
+                                
+                                <div class="composer-telemetry-bar">
+                                    <div class="fincen-meter-group">
+                                        <div class="fincen-labels">
+                                            <span class="char-counter mono" id="char-counter">0 characters</span>
+                                            <span class="fincen-limit-label mono" id="fincen-limit-label">FinCEN Form 111 Limit: 17,000 Chars</span>
+                                        </div>
+                                        <div class="fincen-progress-track">
+                                            <div class="fincen-progress-bar" id="fincen-progress-bar" style="width: 3.2%;"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="composer-stats-group">
+                                        <span class="composer-stat-item mono" id="composer-word-count">0 words</span>
+                                        <span class="composer-stat-separator">·</span>
+                                        <span class="composer-stat-item mono" id="composer-read-time">~0s read</span>
+                                    </div>
+
+                                    <div class="composer-actions">
+                                        <button class="btn btn-ghost btn-sm" id="btn-reset-narrative" title="Reset to original generated AI narrative">
+                                            <i data-lucide="refresh-cw"></i>
+                                            <span>Reset</span>
+                                        </button>
+                                        <button class="btn btn-secondary btn-sm" id="btn-apply-narrative" title="Apply this text to the official dossier">
+                                            <i data-lucide="check"></i>
+                                            <span>Apply to Dossier</span>
                                         </button>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="sar-editor-wrapper">
-                            <textarea id="sar-narrative-textarea" class="sar-textarea mono" rows="14" spellcheck="false"></textarea>
-                            <div class="textarea-footer">
-                                <span class="char-counter mono" id="char-counter">0 characters</span>
-                                <span class="audit-note">Audit Record: Hash-Signed by GraphSAGE v1.0</span>
+                        <!-- SUBVIEW 3: Raw Terminal Risk Card -->
+                        <div class="sar-subview" id="sar-subview-raw">
+                            <div class="raw-card-toolbar">
+                                <div class="raw-card-meta">
+                                    <span class="terminal-badge mono">72-COL COMPLIANCE ASCII REPORT</span>
+                                    <span class="raw-note">Official format generated by ML Risk Reporter</span>
+                                </div>
+                                <button class="btn btn-secondary btn-sm" id="btn-copy-raw-card">
+                                    <i data-lucide="copy"></i>
+                                    <span>Copy ASCII Card</span>
+                                </button>
+                            </div>
+                            <div class="raw-terminal-container">
+                                <pre id="sar-raw-card-text" class="raw-terminal-pre mono"></pre>
                             </div>
                         </div>
                     </div>
