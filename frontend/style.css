@@ -58,6 +58,9 @@
 
     /* Elevation Shadows */
     --shadow-inset: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+
+    /* Cockpit Layout Sizing */
+    --cockpit-panel-height: 700px;
     --shadow-dropdown: 0 8px 24px rgba(0, 0, 0, 0.4);
     --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.55);
 
@@ -683,6 +686,7 @@ h4 { font-size: 0.95rem; font-weight: 600; line-height: 1.4; }
     gap: 16px;
     padding: 16px 24px 24px 24px;
     flex: 1;
+    align-items: start;
 }
 
 .left-panel-container {
@@ -690,22 +694,93 @@ h4 { font-size: 0.95rem; font-weight: 600; line-height: 1.4; }
     flex-direction: column;
     gap: 16px;
     min-width: 0;
+    height: var(--cockpit-panel-height, 700px);
+    max-height: var(--cockpit-panel-height, 700px);
+    box-sizing: border-box;
 }
 
 .right-panel-container {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    height: var(--cockpit-panel-height, 700px);
+    max-height: var(--cockpit-panel-height, 700px);
+    box-sizing: border-box;
 }
 
 .tab-content {
     display: none;
     flex-direction: column;
     gap: 16px;
+    height: 100%;
+    max-height: 100%;
+    box-sizing: border-box;
 }
 
 .tab-content.active {
     display: flex;
+}
+
+.tab-content#view-tab-insights {
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+}
+
+/* Fixed-size panel cards matching GNNExplainer's card */
+.explainer-full-card,
+.chain-stepper-card,
+.benchmark-card {
+    height: 100%;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+/* Clean Custom Scrollbars for All Cockpit Cards */
+.sar-card,
+.explainer-full-card,
+.chain-stepper-card,
+.benchmark-card,
+.tab-content#view-tab-insights {
+    scrollbar-width: thin;
+    scrollbar-color: var(--graphite-600) transparent;
+}
+
+.sar-card::-webkit-scrollbar,
+.explainer-full-card::-webkit-scrollbar,
+.chain-stepper-card::-webkit-scrollbar,
+.benchmark-card::-webkit-scrollbar,
+.tab-content#view-tab-insights::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sar-card::-webkit-scrollbar-track,
+.explainer-full-card::-webkit-scrollbar-track,
+.chain-stepper-card::-webkit-scrollbar-track,
+.benchmark-card::-webkit-scrollbar-track,
+.tab-content#view-tab-insights::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sar-card::-webkit-scrollbar-thumb,
+.explainer-full-card::-webkit-scrollbar-thumb,
+.chain-stepper-card::-webkit-scrollbar-thumb,
+.benchmark-card::-webkit-scrollbar-thumb,
+.tab-content#view-tab-insights::-webkit-scrollbar-thumb {
+    background: var(--graphite-600);
+    border-radius: 4px;
+}
+
+.sar-card::-webkit-scrollbar-thumb:hover,
+.explainer-full-card::-webkit-scrollbar-thumb:hover,
+.chain-stepper-card::-webkit-scrollbar-thumb:hover,
+.benchmark-card::-webkit-scrollbar-thumb:hover,
+.tab-content#view-tab-insights::-webkit-scrollbar-thumb:hover {
+    background: var(--lime-500);
 }
 
 /* Cards System */
@@ -1532,6 +1607,14 @@ h4 { font-size: 0.95rem; font-weight: 600; line-height: 1.4; }
     display: flex;
     flex-direction: column;
     gap: 16px;
+    height: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
+    position: relative;
+    padding: 20px;
+    padding-top: 0;
 }
 
 .sar-header-row {
@@ -1540,6 +1623,12 @@ h4 { font-size: 0.95rem; font-weight: 600; line-height: 1.4; }
     align-items: flex-start;
     flex-wrap: wrap;
     gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--bg-surface);
+    padding: 18px 0 14px 0;
+    border-bottom: 1px solid var(--border-subtle);
 }
 
 .sar-header-meta {
@@ -2591,13 +2680,15 @@ h4 { font-size: 0.95rem; font-weight: 600; line-height: 1.4; }
 .canvas-wrapper {
     width: 100%;
     height: 100%;
-    min-height: 580px;
+    min-height: 100%;
+    max-height: 100%;
     background: var(--graphite-950);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-panel);
     position: relative;
     overflow: hidden;
     box-shadow: var(--shadow-inset);
+    box-sizing: border-box;
     /* Blueprint dot grid background (24px) */
     background-image: radial-gradient(var(--graphite-700) 1px, transparent 1px);
     background-size: 24px 24px;

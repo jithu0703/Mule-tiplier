@@ -74,8 +74,11 @@ PRESET_ACCOUNTS = [
     {"id": "800042CB0", "label": "🛡️ Clean Individual Account (800042CB0)", "type": "standard"},
 ]
 
+import threading
+
 # Memory cache for fast sub-millisecond retrieval of investigated accounts
 analysis_cache: Dict[str, Dict] = {}
+analysis_lock = threading.Lock()
 
 
 def get_cached_or_compute(account_id: str) -> Dict:
@@ -86,9 +89,12 @@ def get_cached_or_compute(account_id: str) -> Dict:
     if acc not in data.account_to_idx:
         raise HTTPException(status_code=404, detail=f"Account '{acc}' not found in the transaction graph index.")
 
-    report = reporter.analyze_account(acc)
-    analysis_cache[acc] = report
-    return report
+    with analysis_lock:
+        if acc in analysis_cache:
+            return analysis_cache[acc]
+        report = reporter.analyze_account(acc)
+        analysis_cache[acc] = report
+        return report
 
 
 # Pre-warm cache in a background thread to allow instant port binding
@@ -101,13 +107,6 @@ def prewarm():
         print("Default account 811C2F680 cached successfully.", flush=True)
     except Exception as e:
         print(f"Warning pre-warming 811C2F680: {e}", flush=True)
-
-    for p in PRESET_ACCOUNTS[1:5]:
-        try:
-            get_cached_or_compute(p["id"])
-        except Exception:
-            pass
-    print("Background cache pre-warming finished.", flush=True)
 
 threading.Thread(target=prewarm, daemon=True).start()
 print("Backend server initialized and ready.", flush=True)
@@ -224,60 +223,123 @@ def get_account_investigation(account_id: str):
 
 
 @app.get("/api/v1/accounts/{account_id}/subgraph")
-def get_account_subgraph(account_id: str, radius: int = 2):
-    """Returns 2-hop computation subgraph nodes and directed edges for interactive canvas."""
+def get_account_subgraph(account_id: str, chain_idx: Optional[int] = Query(None)):
+    """Returns subgraph nodes and directed edges filtered by mule threshold and active chain."""
     report = get_cached_or_compute(account_id)
     gnn = report["gnn_explanation"]
-    chain = report["chain_profile"]
+    chain_prof = report["chain_profile"]
 
-    chain_accounts = set()
-    for c in chain.get("sample_chains", []):
-        chain_accounts.update(c["accounts"])
+    prob = gnn.get("gnn_prob", 0.0)
+    thresh = gnn.get("threshold", 0.5254)
+    in_chain = chain_prof.get("is_in_chain", False)
+    tier = report.get("risk_tier", "")
+    crosses_thresh = prob >= thresh or in_chain or "HIGH" in tier or "CRITICAL" in tier
 
     target_acc = report["account_id"]
-    nodes_dict = {}
-    edges_list = []
+    active_chains = chain_prof.get("active_chains") or chain_prof.get("sample_chains") or []
 
-    # Target node
-    nodes_dict[target_acc] = {
-        "id": target_acc,
-        "label": f"Target: {target_acc}",
-        "role": "target",
-        "is_target": True,
-        "risk_tier": report["risk_tier"],
-        "gnn_prob": round(gnn["gnn_prob"], 4),
-        "size": 24,
+    # If account does NOT cross mule threshold, do not load neighborhood
+    if not crosses_thresh:
+        return {
+            "target_account": target_acc,
+            "nodes": [{
+                "id": target_acc,
+                "label": f"Target: {target_acc}",
+                "role": "target",
+                "is_target": True,
+                "risk_tier": report.get("risk_tier", "STANDARD / LOW RISK"),
+                "gnn_prob": round(prob, 4),
+                "size": 24,
+                "is_clean": True,
+            }],
+            "edges": [],
+            "below_threshold": True,
+            "is_chain": False,
+        }
+
+    # If account crosses threshold and has active chains, return the entire selected chain
+    if active_chains:
+        selected_idx = 0 if chain_idx is None else max(0, min(chain_idx, len(active_chains) - 1))
+        target_chain = active_chains[selected_idx]
+        chain_accounts = target_chain.get("accounts", [])
+        chain_steps = target_chain.get("steps", [])
+
+        nodes_list = []
+        for i, acc in enumerate(chain_accounts):
+            is_target = (acc == target_acc)
+            role = "target" if is_target else ("source" if i == 0 else ("sink" if i == len(chain_accounts) - 1 else "chain"))
+            nodes_list.append({
+                "id": acc,
+                "label": f"Target: {acc}" if is_target else acc,
+                "role": role,
+                "is_target": is_target,
+                "chain_hop": i + 1,
+                "size": 24 if is_target else (19 if role in ("source", "sink") else 16),
+            })
+
+        edges_list = []
+        for step in chain_steps:
+            edges_list.append({
+                "source": step["from"],
+                "target": step["to"],
+                "amount": step.get("amount", 0.0),
+                "timestamp": step.get("timestamp", ""),
+                "importance": 1.0,
+                "direction": "incoming" if step["to"] == target_acc else "outgoing",
+                "in_chain": True,
+                "width": 4.0,
+            })
+
+        return {
+            "target_account": target_acc,
+            "nodes": nodes_list,
+            "edges": edges_list,
+            "below_threshold": False,
+            "is_chain": True,
+            "chain_index": selected_idx,
+            "total_chains": len(active_chains),
+        }
+
+    # Otherwise return target account + only high-attribution incident links (importance >= 0.5)
+    nodes_dict = {
+        target_acc: {
+            "id": target_acc,
+            "label": f"Target: {target_acc}",
+            "role": "target",
+            "is_target": True,
+            "risk_tier": report["risk_tier"],
+            "gnn_prob": round(prob, 4),
+            "size": 24,
+        }
     }
-
-    # Edges from GNN explanation
-    for e in gnn["all_incident_edges"]:
-        u, v = e["from_account"], e["to_account"]
-        other = v if u == target_acc else u
-        is_chain_node = other in chain_accounts
-
-        if other not in nodes_dict:
-            nodes_dict[other] = {
-                "id": other,
-                "label": other,
-                "role": "chain" if is_chain_node else "counterparty",
-                "is_target": False,
-                "size": 18 if is_chain_node else 12,
-            }
-
-        is_chain_edge = (u in chain_accounts) and (v in chain_accounts)
-        edges_list.append({
-            "source": u,
-            "target": v,
-            "importance": round(e["importance_score"], 4),
-            "direction": e["direction"],
-            "in_chain": is_chain_edge,
-            "width": 4.0 if is_chain_edge else (2.5 if e["importance_score"] > 0.6 else 1.2),
-        })
+    edges_list = []
+    for e in gnn.get("all_incident_edges", []):
+        if e.get("importance_score", 0) >= 0.5:
+            u, v = e["from_account"], e["to_account"]
+            other = v if u == target_acc else u
+            if other not in nodes_dict:
+                nodes_dict[other] = {
+                    "id": other,
+                    "label": other,
+                    "role": "counterparty",
+                    "is_target": False,
+                    "size": 15,
+                }
+            edges_list.append({
+                "source": u,
+                "target": v,
+                "importance": round(e["importance_score"], 4),
+                "direction": e["direction"],
+                "in_chain": False,
+                "width": 2.8,
+            })
 
     return {
         "target_account": target_acc,
         "nodes": list(nodes_dict.values()),
         "edges": edges_list,
+        "below_threshold": False,
+        "is_chain": False,
     }
 
 
@@ -306,5 +368,5 @@ def serve_index():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 

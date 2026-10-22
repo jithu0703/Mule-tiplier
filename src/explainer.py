@@ -91,6 +91,13 @@ class MuleExplainer:
         sub_x = self.data.x[subset].to(self.device)
         sub_edge_index = sub_edge_index.to(self.device)
 
+        # Ensure model is clean before evaluation
+        if hasattr(self.explainer.algorithm, "_clean_model"):
+            try:
+                self.explainer.algorithm._clean_model(self.model)
+            except Exception:
+                pass
+
         # 2. Get model prediction on subgraph
         with torch.no_grad():
             logit = float(self.model(sub_x, sub_edge_index)[target_local_idx].cpu())
@@ -150,6 +157,12 @@ class MuleExplainer:
         except Exception:
             # Fall back gracefully for isolated nodes or gradient disconnection
             pass
+        finally:
+            if hasattr(self.explainer.algorithm, "_clean_model"):
+                try:
+                    self.explainer.algorithm._clean_model(self.model)
+                except Exception:
+                    pass
 
         # Fallback feature ranking if explainer was bypassed or had no mask
         if not feat_ranking:

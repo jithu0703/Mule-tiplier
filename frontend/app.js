@@ -431,6 +431,172 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------------------
+    // Threshold Filter & Full Chain Graph Generator
+    // -------------------------------------------------------------------------
+    function crossesMuleThreshold(report) {
+        if (!report) return false;
+        const gnn = report.gnn_explanation || report.gnn_assessment || {};
+        const prob = typeof gnn.gnn_prob === 'number' ? gnn.gnn_prob : 0;
+        const threshold = typeof gnn.threshold === 'number' ? gnn.threshold : 0.5254;
+        const chainProfile = report.chain_profile || {};
+        const inChain = !!(chainProfile.is_in_chain && chainProfile.active_chains && chainProfile.active_chains.length > 0);
+        const tier = (report.risk_tier || '').toUpperCase();
+        return prob >= threshold || inChain || tier.includes('HIGH') || tier.includes('CRITICAL');
+    }
+
+    function generateFilteredSubgraph(report, chainIdx = 0, serverSubgraph = null) {
+        if (!report) {
+            return { target_account: '', nodes: [], edges: [], below_threshold: true, is_chain: false, total_chains: 0 };
+        }
+
+        const targetAcc = report.account_id;
+        const gnn = report.gnn_explanation || report.gnn_assessment || {};
+        const prob = typeof gnn.gnn_prob === 'number' ? gnn.gnn_prob : 0;
+        const chainProfile = report.chain_profile || {};
+        const activeChains = chainProfile.active_chains || [];
+        const crosses = crossesMuleThreshold(report);
+
+        // Case 1: Account does NOT cross mule threshold -> Only target node, no neighborhood loaded
+        if (!crosses) {
+            return {
+                target_account: targetAcc,
+                nodes: [{
+                    id: targetAcc,
+                    label: `Target: ${targetAcc}`,
+                    role: 'target',
+                    is_target: true,
+                    risk_tier: report.risk_tier || 'STANDARD / LOW RISK',
+                    gnn_prob: prob,
+                    size: 24,
+                    is_clean: true
+                }],
+                edges: [],
+                below_threshold: true,
+                is_chain: false,
+                total_chains: 0
+            };
+        }
+
+        // Case 2: Crosses threshold with active multi-hop chains -> Render the entire selected chain
+        if (activeChains.length > 0) {
+            const safeIdx = Math.min(Math.max(chainIdx || 0, 0), activeChains.length - 1);
+            const chain = activeChains[safeIdx];
+            const accounts = chain.accounts || [];
+            const steps = chain.steps || [];
+
+            const nodes = accounts.map((acc, i) => {
+                const isTarget = acc === targetAcc;
+                let role = 'chain';
+                let roleLabel = 'Intermediary Mule';
+                if (isTarget) {
+                    role = 'target';
+                    roleLabel = 'Target Mule';
+                } else if (i === 0) {
+                    role = 'source';
+                    roleLabel = 'Source / Initiator';
+                } else if (i === accounts.length - 1) {
+                    role = 'sink';
+                    roleLabel = 'Cash-Out Sink';
+                }
+
+                return {
+                    id: acc,
+                    label: isTarget ? `Target: ${acc}` : acc,
+                    role: role,
+                    roleLabel: roleLabel,
+                    is_target: isTarget,
+                    chain_hop: i + 1,
+                    size: isTarget ? 24 : (role === 'source' || role === 'sink' ? 19 : 16),
+                    is_clean: false
+                };
+            });
+
+            const edges = steps.map((s, i) => ({
+                source: s.from,
+                target: s.to,
+                amount: s.amount,
+                timestamp: s.timestamp,
+                in_chain: true,
+                importance: 1.0,
+                direction: s.to === targetAcc ? 'incoming' : 'outgoing',
+                width: 4.0,
+                step_num: i + 1
+            }));
+
+            return {
+                target_account: targetAcc,
+                nodes: nodes,
+                edges: edges,
+                below_threshold: false,
+                is_chain: true,
+                chain_index: safeIdx,
+                total_chains: activeChains.length
+            };
+        }
+
+        // Case 3: Crosses threshold on GNN features alone, no multi-hop motif detected
+        // Only load target and top attributed suspicious links (importance >= 0.5)
+        const incidentEdges = (serverSubgraph && serverSubgraph.edges) || gnn.all_incident_edges || [];
+        const suspiciousEdges = incidentEdges.filter(e => (e.importance_score || e.importance || 0) >= 0.5);
+
+        const nodesDict = {};
+        nodesDict[targetAcc] = {
+            id: targetAcc,
+            label: `Target: ${targetAcc}`,
+            role: 'target',
+            is_target: true,
+            risk_tier: report.risk_tier,
+            gnn_prob: prob,
+            size: 24,
+            is_clean: false
+        };
+
+        const edges = [];
+        suspiciousEdges.forEach(e => {
+            const u = e.from_account || e.source;
+            const v = e.to_account || e.target;
+            const other = (u === targetAcc) ? v : u;
+            if (!nodesDict[other]) {
+                nodesDict[other] = {
+                    id: other,
+                    label: other,
+                    role: 'counterparty',
+                    is_target: false,
+                    size: 15,
+                    is_clean: false
+                };
+            }
+            edges.push({
+                source: u,
+                target: v,
+                importance: e.importance_score || e.importance || 0.6,
+                direction: e.direction || (v === targetAcc ? 'incoming' : 'outgoing'),
+                in_chain: false,
+                width: 2.8
+            });
+        });
+
+        return {
+            target_account: targetAcc,
+            nodes: Object.values(nodesDict),
+            edges: edges,
+            below_threshold: false,
+            is_chain: false,
+            total_chains: 0
+        };
+    }
+
+    function updateActiveChainGraph() {
+        if (!state.currentInvestigation) return;
+        const report = state.currentInvestigation;
+        const subgraph = generateFilteredSubgraph(report, state.selectedChainIndex);
+        state.currentSubgraph = subgraph;
+        initGraphTopology(subgraph, report);
+        renderAccessibleTable(subgraph);
+        renderQuickChainPreview(report.chain_profile || {});
+    }
+
+    // -------------------------------------------------------------------------
     // Account Selection & Investigation Loader
     // -------------------------------------------------------------------------
     async function selectAccount(accountId) {
@@ -455,12 +621,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (_) {}
                 throw new Error(msg);
             }
-            if (!subRes.ok) throw new Error(`Failed to load 2-hop graph topology for ${accountId}`);
             
             const report = await reportRes.json();
-            const subgraph = await subRes.json();
+            let serverSubgraph = null;
+            try {
+                if (subRes.ok) serverSubgraph = await subRes.json();
+            } catch (_) {}
 
             state.currentInvestigation = report;
+
+            // Generate threshold-filtered graph with entire chain
+            const subgraph = generateFilteredSubgraph(report, state.selectedChainIndex, serverSubgraph);
             state.currentSubgraph = subgraph;
 
             // Render all UI components with defensive try/catch blocks
@@ -475,7 +646,8 @@ document.addEventListener('DOMContentLoaded', () => {
             try { initGraphTopology(subgraph, report); } catch (e) { console.error('Topology error:', e); }
             try { renderAccessibleTable(subgraph); } catch (e) { console.error('Table error:', e); }
 
-            showToast(`Loaded analysis for ${accountId} (${(report.risk_tier || 'MONITORED').toUpperCase()})`, 'lime', 2500);
+            const statusLabel = subgraph.below_threshold ? 'CLEAN (BELOW THRESHOLD)' : (report.risk_tier || 'MONITORED').toUpperCase();
+            showToast(`Loaded analysis for ${accountId} (${statusLabel})`, subgraph.below_threshold ? 'info' : 'lime', 2500);
         } catch (err) {
             console.error('selectAccount error:', err);
             showToast(err.message, 'critical', 4500);
@@ -676,12 +848,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const chain = chainProfile.active_chains[0];
+        const safeIdx = Math.min(Math.max(state.selectedChainIndex || 0, 0), chainProfile.active_chains.length - 1);
+        const chain = chainProfile.active_chains[safeIdx] || chainProfile.active_chains[0];
         let html = '';
         chain.accounts.forEach((acc, i) => {
             const isTarget = acc === state.currentAccountId;
             html += `
-                <span class="chain-chip mono ${isTarget ? 'target-chip' : ''}" title="Hop ${i + 1}: ${acc}">
+                <span class="chain-chip mono ${isTarget ? 'target-chip' : ''}" data-account="${acc}" style="cursor: pointer;" title="Hop ${i + 1}: ${acc} (Click to focus in canvas)">
                     ${acc}
                 </span>
             `;
@@ -692,6 +865,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         els.quickChainPreview.innerHTML = html;
         lucide.createIcons();
+
+        els.quickChainPreview.querySelectorAll('.chain-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                const acc = chip.dataset.account;
+                focusNodeInCanvas(acc);
+                showToast(`Focused on ${acc} in graph canvas`, 'info', 1200);
+            });
+        });
     }
 
     // -------------------------------------------------------------------------
@@ -787,6 +968,7 @@ document.addEventListener('DOMContentLoaded', () => {
             els.chainSelectBox.value = state.selectedChainIndex;
             els.chainSelectBox.onchange = (e) => {
                 state.selectedChainIndex = parseInt(e.target.value, 10);
+                updateActiveChainGraph();
                 renderChainStepper(chainProfile);
             };
         }
@@ -812,6 +994,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         els.customChainTrigger.classList.remove('active');
                         els.customChainTrigger.setAttribute('aria-expanded', 'false');
                     }
+                    updateActiveChainGraph();
                     renderChainStepper(chainProfile);
                 });
             });
@@ -1838,14 +2021,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------------------
     function renderAccessibleTable(subgraph) {
         if (!els.accessibleNodesTbody || !subgraph || !subgraph.nodes) return;
+
+        if (subgraph.below_threshold) {
+            els.accessibleNodesTbody.innerHTML = `
+                <tr>
+                    <td colspan="3" style="text-align:center; padding: 24px; color: var(--text-muted);">
+                        <i data-lucide="shield-check" style="display:inline-block; vertical-align:middle; margin-right:6px; color: var(--risk-standard);"></i>
+                        Account risk is below mule threshold (52.5%). No laundering network to display.
+                    </td>
+                </tr>
+            `;
+            lucide.createIcons();
+            return;
+        }
+
         let html = '';
         subgraph.nodes.forEach(node => {
             const edgeCount = (subgraph.edges || []).filter(e => e.source === node.id || e.target === node.id).length;
+            const roleText = node.roleLabel || node.role || 'counterparty';
             html += `
                 <tr>
                     <td class="mono"><strong>${node.id}</strong> ${node.is_target ? '<span class="pill-mini badge-critical">TARGET</span>' : ''}</td>
-                    <td class="mono">${(node.role || 'counterparty').toUpperCase()}</td>
-                    <td class="mono">${edgeCount} Directed Edges</td>
+                    <td class="mono">${roleText.toUpperCase()}</td>
+                    <td class="mono">${node.chain_hop ? 'Hop ' + node.chain_hop : edgeCount + ' Directed Edges'}</td>
                 </tr>
             `;
         });
@@ -1890,9 +2088,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const nodes = subgraph.nodes || [];
         const total = nodes.length;
 
-        // Radial layout initialization with target at center
-        nodes.forEach((node, i) => {
-            if (node.is_target) {
+        // Update Subgraph Count Chip
+        if (els.chipSubgraphCounts) {
+            if (subgraph.below_threshold) {
+                els.chipSubgraphCounts.textContent = '1 Node · 0 Links (Below Mule Threshold)';
+            } else if (subgraph.is_chain) {
+                const chainLabel = `Chain ${state.selectedChainIndex + 1}${subgraph.total_chains ? ' of ' + subgraph.total_chains : ''}`;
+                els.chipSubgraphCounts.textContent = `${total} Nodes · ${subgraph.edges.length} Hops (${chainLabel})`;
+            } else {
+                els.chipSubgraphCounts.textContent = `${total} Nodes · ${subgraph.edges.length} Suspicious Links`;
+            }
+        }
+
+        // Layout Strategy
+        if (subgraph.below_threshold) {
+            // Case A: Below Threshold -> Single Target node centered
+            nodes.forEach(node => {
                 state.nodePositions[node.id] = {
                     ...node,
                     x: cx,
@@ -1902,32 +2113,55 @@ document.addEventListener('DOMContentLoaded', () => {
                     radius: 22,
                     isPinned: true
                 };
-            } else if (node.role === 'chain') {
-                const angle = (i / Math.max(total, 1)) * Math.PI * 2;
-                const dist = 140 + (i % 2) * 30;
+            });
+        } else if (subgraph.is_chain) {
+            // Case B: Full Sequential Chain -> Ordered horizontal arc/wave from Source to Sink
+            const spacing = Math.min(Math.max((rect.width - 240) / Math.max(total - 1, 1), 110), 220);
+            const startX = cx - ((total - 1) * spacing) / 2;
+
+            nodes.forEach((node, i) => {
+                const x = startX + i * spacing;
+                const yOffset = (i % 2 === 0 ? -1 : 1) * (total > 2 ? 32 : 0);
+                const y = cy + yOffset;
+
                 state.nodePositions[node.id] = {
                     ...node,
-                    x: cx + Math.cos(angle) * dist,
-                    y: cy + Math.sin(angle) * dist,
-                    vx: (Math.random() - 0.5) * 2,
-                    vy: (Math.random() - 0.5) * 2,
-                    radius: 17,
-                    isPinned: false
+                    x: x,
+                    y: y,
+                    vx: 0,
+                    vy: 0,
+                    radius: node.is_target ? 22 : (node.role === 'source' || node.role === 'sink' ? 19 : 16),
+                    isPinned: node.is_target
                 };
-            } else {
-                const angle = (i / Math.max(total, 1)) * Math.PI * 2;
-                const dist = 220 + (i % 3) * 40;
-                state.nodePositions[node.id] = {
-                    ...node,
-                    x: cx + Math.cos(angle) * dist,
-                    y: cy + Math.sin(angle) * dist,
-                    vx: (Math.random() - 0.5) * 2,
-                    vy: (Math.random() - 0.5) * 2,
-                    radius: 12,
-                    isPinned: false
-                };
-            }
-        });
+            });
+        } else {
+            // Case C: Feature-flagged without motif -> Radial layout around Target
+            nodes.forEach((node, i) => {
+                if (node.is_target) {
+                    state.nodePositions[node.id] = {
+                        ...node,
+                        x: cx,
+                        y: cy,
+                        vx: 0,
+                        vy: 0,
+                        radius: 22,
+                        isPinned: true
+                    };
+                } else {
+                    const angle = (i / Math.max(total, 1)) * Math.PI * 2;
+                    const dist = 160 + (i % 2) * 40;
+                    state.nodePositions[node.id] = {
+                        ...node,
+                        x: cx + Math.cos(angle) * dist,
+                        y: cy + Math.sin(angle) * dist,
+                        vx: (Math.random() - 0.5) * 2,
+                        vy: (Math.random() - 0.5) * 2,
+                        radius: 15,
+                        isPinned: false
+                    };
+                }
+            });
+        }
 
         fitGraphToScreen();
 
@@ -1957,7 +2191,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Physics Simulation Step
     function updatePhysics() {
-        if (!state.physicsEnabled || !state.currentSubgraph) return;
+        if (!state.physicsEnabled || !state.currentSubgraph || state.currentSubgraph.below_threshold) return;
 
         const nodes = Object.values(state.nodePositions);
         const edges = state.currentSubgraph.edges || [];
@@ -2023,6 +2257,19 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.save();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, rect.width, rect.height);
+
+        // Watermark Banner if Account is Below Threshold
+        if (state.currentSubgraph.below_threshold) {
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.font = '600 13px Inter, sans-serif';
+            ctx.fillStyle = state.theme === 'dark' ? '#94A3B8' : '#475569';
+            ctx.fillText('Account risk is below mule threshold (52.5%).', rect.width / 2, rect.height - 38);
+            ctx.font = '400 12px Inter, sans-serif';
+            ctx.fillStyle = state.theme === 'dark' ? '#64748B' : '#94A3B8';
+            ctx.fillText('No suspicious multi-hop laundering network loaded.', rect.width / 2, rect.height - 20);
+            ctx.restore();
+        }
 
         // Apply pan and zoom
         ctx.translate(state.canvasTransform.x, state.canvasTransform.y);
@@ -2102,6 +2349,8 @@ document.addEventListener('DOMContentLoaded', () => {
         nodes.forEach(node => {
             const isTarget = node.is_target;
             const isChain = node.role === 'chain';
+            const isSource = node.role === 'source';
+            const isSink = node.role === 'sink';
             const isSelected = node.id === state.selectedNodeId;
             const isHovered = node.id === state.hoveredNodeId;
 
@@ -2109,7 +2358,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Glow effect
             if (isTarget) {
-                ctx.shadowColor = 'rgba(255, 77, 94, 0.5)';
+                ctx.shadowColor = node.is_clean ? 'rgba(45, 212, 191, 0.5)' : 'rgba(255, 77, 94, 0.5)';
                 ctx.shadowBlur = 16;
             } else if (isSelected) {
                 ctx.shadowColor = 'rgba(182, 255, 46, 0.8)';
@@ -2118,7 +2367,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Fill color
             let fillColor = '#60A5FA';
-            if (isTarget) fillColor = '#FF4D5E';
+            if (node.is_clean) fillColor = '#2DD4BF';
+            else if (isTarget) fillColor = '#FF4D5E';
+            else if (isSource) fillColor = '#2DD4BF';
+            else if (isSink) fillColor = '#A78BFA';
             else if (isChain) fillColor = '#FF8A3D';
 
             ctx.beginPath();
@@ -2131,7 +2383,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Double ring
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, node.radius + 4, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(255, 77, 94, 0.45)';
+                ctx.strokeStyle = node.is_clean ? 'rgba(45, 212, 191, 0.45)' : 'rgba(255, 77, 94, 0.45)';
                 ctx.lineWidth = 2.5;
                 ctx.stroke();
 
@@ -2139,6 +2391,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.arc(node.x, node.y, node.radius + 8, 0, Math.PI * 2);
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
                 ctx.lineWidth = 1.5;
+                ctx.stroke();
+            } else if (isSource) {
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, node.radius + 3, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(45, 212, 191, 0.55)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            } else if (isSink) {
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, node.radius + 3, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(167, 139, 250, 0.55)';
+                ctx.lineWidth = 2;
                 ctx.stroke();
             } else if (isChain) {
                 ctx.beginPath();
@@ -2166,7 +2430,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Monospace Node Label
-            if (isTarget || isChain || isHovered || state.canvasTransform.scale > 1.2) {
+            if (isTarget || isChain || isSource || isSink || isHovered || state.canvasTransform.scale > 1.2) {
                 ctx.shadowBlur = 0;
                 ctx.font = '500 11px JetBrains Mono, monospace';
                 ctx.fillStyle = state.theme === 'dark' ? '#F8FAFC' : '#14161B';
@@ -2280,10 +2544,25 @@ document.addEventListener('DOMContentLoaded', () => {
     function showNodeTooltip(node, x, y) {
         if (!els.nodeTooltip) return;
         if (els.ttId) els.ttId.textContent = node.id;
-        if (els.ttRole) els.ttRole.textContent = (node.role || 'COUNTERPARTY').toUpperCase();
-        if (els.ttFlow) els.ttFlow.textContent = node.is_target ? '$31,466.97' : '$15,833.52';
-        if (els.ttHolding) els.ttHolding.textContent = node.is_target ? '8.25 hrs' : '3.40 hrs';
-        if (els.ttScore) els.ttScore.textContent = typeof node.gnn_prob === 'number' ? (node.gnn_prob * 100).toFixed(1) + '%' : 'Attributed';
+        if (els.ttRole) {
+            let roleName = node.roleLabel || node.role || 'counterparty';
+            if (node.is_target) roleName = node.is_clean ? 'CLEAN TARGET' : 'TARGET MULE';
+            els.ttRole.textContent = roleName.toUpperCase();
+        }
+        if (els.ttFlow) {
+            if (node.is_clean) els.ttFlow.textContent = 'Normal Activity';
+            else els.ttFlow.textContent = node.is_target ? '$31,466.97' : '$15,833.52';
+        }
+        if (els.ttHolding) {
+            if (node.is_clean) els.ttHolding.textContent = 'Standard';
+            else els.ttHolding.textContent = node.is_target ? '8.25 hrs' : '3.40 hrs';
+        }
+        if (els.ttScore) {
+            if (node.is_clean) els.ttScore.textContent = '0.2% (Standard)';
+            else if (typeof node.gnn_prob === 'number') els.ttScore.textContent = (node.gnn_prob * 100).toFixed(1) + '%';
+            else if (node.chain_hop) els.ttScore.textContent = 'Hop ' + node.chain_hop;
+            else els.ttScore.textContent = 'Attributed';
+        }
 
         els.nodeTooltip.style.left = `${x + 18}px`;
         els.nodeTooltip.style.top = `${y + 18}px`;
