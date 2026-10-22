@@ -117,38 +117,48 @@ res_df.to_csv("outputs/results/m3_comparison.csv", index=False)
 print("Saved outputs/results/m3_comparison.csv")
 
 # 5. Generate Precision-Recall Curve Comparison
-plt.figure(figsize=(9, 6.5))
+fig, ax = plt.subplots(figsize=(8.5, 5.2), facecolor="#1A1D24")
+ax.set_facecolor("#23262F")
 
 # Baseline random
 base_rate = float(y_test.mean())
-plt.axhline(base_rate, color="gray", linestyle="--", lw=1.5,
-            label=f"Random Guessing Floor (AP = {base_rate:.4f})")
+ax.axhline(base_rate, color="#565C6B", linestyle="--", lw=1.5,
+           label=f"Random Guessing Floor (AP = {base_rate:.4f})")
 
 # XGBoost PR curve
 prec_xgb, rec_xgb, _ = precision_recall_curve(y_test, p_test_xgb)
-plt.plot(rec_xgb, prec_xgb, color="#d97706", lw=2,
-         label=f"XGBoost Baseline (PR-AUC = {xgb_test_m['pr_auc']:.4f})")
-plt.scatter([xgb_test_m["recall"]], [xgb_test_m["precision"]], color="#b45309", s=90, zorder=5,
-            label=f"XGBoost Max-F1 Point (P={xgb_test_m['precision']:.3f}, R={xgb_test_m['recall']:.3f})")
+ax.plot(rec_xgb, prec_xgb, color="#FF8A3D", lw=2, linestyle="--",
+        label=f"XGBoost Baseline (PR-AUC = {xgb_test_m['pr_auc']:.4f})")
+ax.scatter([xgb_test_m["recall"]], [xgb_test_m["precision"]], color="#EA580C", s=85, zorder=5,
+           label=f"XGBoost Max-F1 Point (P={xgb_test_m['precision']:.3f}, R={xgb_test_m['recall']:.3f})")
 
 # GraphSAGE PR curve
 prec_gnn, rec_gnn, _ = precision_recall_curve(y_test, p_test_gnn)
-plt.plot(rec_gnn, prec_gnn, color="#2563eb", lw=2.5,
-         label=f"GraphSAGE GNN (PR-AUC = {gnn_test_m['pr_auc']:.4f})")
-plt.scatter([gnn_test_m["recall"]], [gnn_test_m["precision"]], color="#1d4ed8", s=110, zorder=6,
-            label=f"GraphSAGE Max-F1 Point (P={gnn_test_m['precision']:.3f}, R={gnn_test_m['recall']:.3f})")
+ax.plot(rec_gnn, prec_gnn, color="#B6FF2E", lw=2.6,
+        label=f"GraphSAGE GNN (PR-AUC = {gnn_test_m['pr_auc']:.4f})")
+ax.scatter([gnn_test_m["recall"]], [gnn_test_m["precision"]], color="#B6FF2E", edgecolor="#14161B", lw=2, s=115, zorder=6,
+           label=f"GraphSAGE Max-F1 Point (P={gnn_test_m['precision']:.3f}, R={gnn_test_m['recall']:.3f})")
 
-plt.title("Money Mule Detection: Precision-Recall Curve Comparison (Test Split)",
-          fontsize=13, fontweight="bold", pad=12)
-plt.xlabel("Recall (Mules Caught)", fontsize=11)
-plt.ylabel("Precision (True Positive Alert Rate)", fontsize=11)
-plt.xlim([0.0, 1.0])
-plt.ylim([0.0, 1.05])
-plt.grid(True, linestyle="--", alpha=0.5)
-plt.legend(loc="upper right", frameon=True, fontsize=10)
+ax.set_title("Money Mule Detection: Precision-Recall Curve Comparison (Test Split)",
+             fontsize=12, fontweight="bold", pad=12, color="#FFFFFF")
+ax.set_xlabel("Recall (Mules Caught)", fontsize=10.5, fontweight="500", color="#A9AEBB")
+ax.set_ylabel("Precision (True Positive Alert Rate)", fontsize=10.5, fontweight="500", color="#A9AEBB")
+ax.set_xlim([0.0, 1.0])
+ax.set_ylim([0.0, 1.05])
+
+ax.tick_params(colors="#A9AEBB", which="both", labelsize=9.5)
+for spine in ax.spines.values():
+    spine.set_color("#3A3F4C")
+    spine.set_linewidth(1.0)
+
+ax.grid(True, linestyle="--", alpha=0.35, color="#565C6B")
+legend = ax.legend(loc="upper right", frameon=True, facecolor="#14161B", edgecolor="#3A3F4C", fontsize=9.2)
+for text in legend.get_texts():
+    text.set_color("#F8FAFC")
 
 plt.tight_layout()
 os.makedirs("outputs/figures", exist_ok=True)
-plt.savefig("outputs/figures/pr_curve_comparison.png", dpi=300)
+plt.savefig("outputs/figures/pr_curve_comparison.png", dpi=200, facecolor=fig.get_facecolor(), edgecolor="none")
 plt.close()
 print("Saved outputs/figures/pr_curve_comparison.png")
+

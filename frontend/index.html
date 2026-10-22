@@ -266,7 +266,7 @@
                         <div class="card-header">
                             <div>
                                 <h3 class="card-title">Sequential Laundering Motif Stepper</h3>
-                                <p class="card-subtitle">Verifies chronological fund forwarding ($A \to B \to C \to D$) with amount decay</p>
+                                <p class="card-subtitle">Verifies chronological fund forwarding (A &rarr; B &rarr; C &rarr; D) with amount decay</p>
                             </div>
                             <div class="chain-selector-dropdown">
                                 <select id="chain-select-box" class="form-select">
@@ -354,8 +354,14 @@
                                         <span>Download</span>
                                     </button>
                                     <div class="dropdown-menu hidden" id="download-dropdown">
-                                        <button class="dropdown-item" data-format="txt">Plain Text (.txt)</button>
-                                        <button class="dropdown-item" data-format="json">Structured JSON (.json)</button>
+                                        <button class="dropdown-item" data-format="txt">
+                                            <i data-lucide="file-text"></i>
+                                            <span>Plain Text (.txt)</span>
+                                        </button>
+                                        <button class="dropdown-item" data-format="json">
+                                            <i data-lucide="code"></i>
+                                            <span>Structured JSON (.json)</span>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
