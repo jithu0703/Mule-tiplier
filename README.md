@@ -32,17 +32,28 @@ chain-reaction/
 ├── notebooks/
 │   ├── 01_data_exploration.ipynb
 │   ├── 02_baseline_model.ipynb
-│   └── ...
+│   ├── 03_graphsage.ipynb
+│   ├── 04_chain_detection_and_explainability.ipynb
+│   └── 05_scaling_and_demo.ipynb
 │
 ├── src/
 │   ├── data_loader.py        # Load + clean transactions, currency standardization
 │   ├── graph_builder.py      # Build the transaction graph (networkx)
-│   └── feature_engineering.py # Per-account graph feature computation
+│   ├── feature_engineering.py # Per-account graph feature computation
+│   ├── splits.py             # Stratified 70/10/20 data splitting
+│   ├── gnn_data.py           # PyG Data object constructor
+│   ├── gnn_model.py          # GraphSAGE architecture & NeighborLoader
+│   ├── chain_detector.py     # Multi-hop temporal motif chain detector
+│   ├── explainer.py          # GNNExplainer feature & edge attribution
+│   ├── risk_report.py        # Combined Analyst Risk Cards & ego-subgraphs
+│   └── spark_features.py     # Distributed PySpark feature engineering
 │
 ├── outputs/
-│   └── figures/               # Saved plots and visualizations
-|   └── cache/                 # Graphs and other data
-|   └── models/                # Store baseline model
+│   ├── figures/              # Saved plots and visualizations
+│   ├── cache/                # Serialized graphs
+│   ├── models/               # XGBoost model (model.json) & GraphSAGE (graphsage.pt)
+│   └── results/              # Evaluation benchmark tables
+├── app.py                    # Interactive Streamlit AML Compliance Dashboard
 │
 ├── requirements.txt
 └── README.md
@@ -59,6 +70,11 @@ source chain-reaction-env/bin/activate      # Windows: chain-reaction-env\Script
 pip install -r requirements.txt
 ```
 
+### Launch Interactive AML Intelligence Dashboard
+```bash
+streamlit run app.py
+```
+
 **Requirements**
 ```
 pandas
@@ -69,8 +85,11 @@ seaborn
 scikit-learn
 xgboost
 torch
+torchvision
 torch_geometric
 jupyterlab
+streamlit
+pyspark
 ```
 
 ---

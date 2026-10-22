@@ -9,3 +9,5 @@ torch
 torchvision
 torch_geometric
 jupyterlab
+streamlit
+pyspark
