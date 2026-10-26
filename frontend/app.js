@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
         draggedNode: null,
         nodePositions: {}, // id -> { x, y, vx, vy, isPinned, radius, color, label, role, ... }
         animFrameId: null,
+        cameraAnimFrame: null,
         pulseOffset: 0,
         // SAR State
         currentSarMode: 'dossier',
@@ -254,6 +255,55 @@ document.addEventListener('DOMContentLoaded', () => {
         els.activeTabIndicator.style.left = `${btnRect.left - navRect.left}px`;
     }
 
+    const mainSplit = document.querySelector('.main-content-split');
+    const btnToggleLayout = document.getElementById('btn-toggle-layout');
+    const layoutToggleText = document.getElementById('layout-toggle-text');
+    const layoutToggleIcon = document.getElementById('layout-toggle-icon');
+    const telemetryBar = document.querySelector('.telemetry-bar');
+    const btnToggleTelemetry = document.getElementById('btn-toggle-telemetry');
+    const telemetryChevron = document.getElementById('telemetry-chevron');
+
+    let isFullWorkspace = false;
+
+    function setLayoutMode(fullWidth) {
+        isFullWorkspace = fullWidth;
+        if (!mainSplit) return;
+        if (isFullWorkspace) {
+            mainSplit.classList.add('layout-full-left');
+            if (layoutToggleText) layoutToggleText.textContent = 'Split View';
+            if (layoutToggleIcon) layoutToggleIcon.setAttribute('data-lucide', 'columns');
+        } else {
+            mainSplit.classList.remove('layout-full-left');
+            if (layoutToggleText) layoutToggleText.textContent = 'Full Workspace';
+            if (layoutToggleIcon) layoutToggleIcon.setAttribute('data-lucide', 'maximize-2');
+        }
+        resizeCanvas();
+        if (state.currentSubgraph) {
+            fitGraphToScreen(75, false);
+        }
+        lucide.createIcons();
+    }
+
+    if (btnToggleLayout) {
+        btnToggleLayout.addEventListener('click', () => {
+            setLayoutMode(!isFullWorkspace);
+        });
+    }
+
+    function toggleTelemetryBar() {
+        if (!telemetryBar) return;
+        telemetryBar.classList.toggle('collapsed');
+        const isCollapsed = telemetryBar.classList.contains('collapsed');
+        if (telemetryChevron) {
+            telemetryChevron.setAttribute('data-lucide', isCollapsed ? 'chevrons-down' : 'chevrons-up');
+        }
+        lucide.createIcons();
+    }
+
+    if (btnToggleTelemetry) {
+        btnToggleTelemetry.addEventListener('click', toggleTelemetryBar);
+    }
+
     function switchTab(tabId) {
         state.activeTab = tabId;
         els.tabBtns.forEach(btn => {
@@ -272,7 +322,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 content.classList.remove('active');
             }
         });
+
+        // Adaptive Workspace: Document-heavy SAR & Benchmarks default to Full Workspace for comfort
+        if (tabId === 'tab-sar' || tabId === 'tab-benchmarks') {
+            setLayoutMode(true);
+        } else {
+            setLayoutMode(false);
+        }
+
         resizeCanvas();
+        if (tabId === 'tab-chains' && state.currentSubgraph && state.currentSubgraph.is_chain) {
+            fitGraphToScreen(75, false);
+        }
+        if (tabId === 'tab-benchmarks' && typeof renderInteractivePRCurve === 'function') {
+            renderInteractivePRCurve();
+        }
         lucide.createIcons();
     }
 
@@ -280,10 +344,36 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
+    // Global Keyboard Accelerators (1-5 for Views, F for Full Workspace, T for Telemetry)
+    window.addEventListener('keydown', (e) => {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) {
+            return;
+        }
+
+        if (e.key === '1') {
+            switchTab('tab-insights');
+        } else if (e.key === '2') {
+            switchTab('tab-chains');
+        } else if (e.key === '3') {
+            switchTab('tab-explainer');
+        } else if (e.key === '4') {
+            switchTab('tab-sar');
+        } else if (e.key === '5') {
+            switchTab('tab-benchmarks');
+        } else if (e.key === 'f' || e.key === 'F') {
+            setLayoutMode(!isFullWorkspace);
+        } else if (e.key === 't' || e.key === 'T') {
+            toggleTelemetryBar();
+        }
+    });
+
     window.addEventListener('resize', () => {
         const activeBtn = document.querySelector('.tab-btn.active');
         if (activeBtn) updateTabIndicator(activeBtn);
         resizeCanvas();
+        if (state.currentSubgraph) {
+            fitGraphToScreen(75, false);
+        }
     });
 
     if (els.btnJumpChains) {
@@ -325,12 +415,44 @@ document.addEventListener('DOMContentLoaded', () => {
     // Global Autocomplete Search
     // -------------------------------------------------------------------------
     let searchDebounceTimer = null;
+    let activeAutocompleteIndex = -1;
 
     function renderAutocomplete(results) {
         if (!els.autocompleteDropdown) return;
+        activeAutocompleteIndex = -1;
+
         if (!results || results.length === 0) {
-            els.autocompleteDropdown.innerHTML = `<div class="autocomplete-empty">No matching accounts found</div>`;
+            els.autocompleteDropdown.innerHTML = `
+                <div class="ac-empty-container">
+                    <i data-lucide="search" class="ac-empty-icon"></i>
+                    <div class="ac-empty-title">No matching accounts found</div>
+                    <div class="ac-empty-subtitle">Try searching by numeric account ID (e.g. 514781) or select a curated scenario below.</div>
+                    <div class="ac-suggestions-label">Curated Presets</div>
+                    <div class="ac-chips-grid">
+                        <button type="button" class="ac-suggest-chip" data-id="514781"><i data-lucide="zap" style="width:12px;height:12px"></i> 514781 (Mule 0.98)</button>
+                        <button type="button" class="ac-suggest-chip" data-id="389214"><i data-lucide="zap" style="width:12px;height:12px"></i> 389214 (Layering)</button>
+                        <button type="button" class="ac-suggest-chip" data-id="128456"><i data-lucide="zap" style="width:12px;height:12px"></i> 128456 (Smurfing)</button>
+                        <button type="button" class="ac-suggest-chip" data-id="492103"><i data-lucide="zap" style="width:12px;height:12px"></i> 492103 (Hub)</button>
+                    </div>
+                </div>
+                <div class="autocomplete-footer">
+                    <div class="ac-kbd-hints">
+                        <span><kbd class="ac-kbd">esc</kbd> close</span>
+                    </div>
+                    <div class="ac-footer-meta">515,080 accounts indexed</div>
+                </div>
+            `;
             els.autocompleteDropdown.classList.remove('hidden');
+            lucide.createIcons();
+            els.autocompleteDropdown.querySelectorAll('.ac-suggest-chip').forEach(chip => {
+                chip.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    const id = chip.dataset.id;
+                    selectAccount(id);
+                    els.autocompleteDropdown.classList.add('hidden');
+                    if (els.globalSearchInput) els.globalSearchInput.value = '';
+                });
+            });
             return;
         }
 
@@ -339,45 +461,95 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let html = '';
         if (presets.length > 0) {
-            html += `<div class="autocomplete-section-title"><i data-lucide="zap" class="sec-icon"></i> Curated Presets</div>`;
+            html += `
+                <div class="ac-section-header">
+                    <div class="ac-section-title"><i data-lucide="zap" class="sec-icon"></i> Curated Presets</div>
+                    <span class="ac-section-count">${presets.length}</span>
+                </div>
+            `;
             presets.forEach(p => {
+                const badgeClass = p.type === 'critical' ? 'ac-badge-critical' : (p.type === 'high' ? 'ac-badge-high' : 'ac-badge-recent');
+                const iconClass = p.type === 'critical' ? 'risk-critical' : (p.type === 'high' ? 'risk-high' : 'type-recent');
                 html += `
-                    <div class="autocomplete-item preset-item" data-id="${p.id}">
-                        <div class="item-left">
-                            <span class="preset-badge badge-${p.type}">PRESET</span>
-                            <span class="item-label mono">${p.label}</span>
+                    <div class="autocomplete-item" data-id="${p.id}" role="option">
+                        <div class="ac-item-main">
+                            <div class="ac-icon-wrap ${iconClass}">
+                                <i data-lucide="zap"></i>
+                            </div>
+                            <div class="ac-text-group">
+                                <div class="ac-primary-row">
+                                    <span class="ac-account-id">${p.id}</span>
+                                    <span class="ac-badge ${badgeClass}">${p.type ? p.type.toUpperCase() : 'PRESET'}</span>
+                                </div>
+                                <div class="ac-desc">${p.label || 'Curated mule investigation pattern'}</div>
+                            </div>
                         </div>
-                        <span class="item-id mono">${p.id}</span>
+                        <div class="ac-item-right">
+                            <span class="ac-action-hint">Load <i data-lucide="corner-down-left" style="width:10px;height:10px"></i></span>
+                        </div>
                     </div>
                 `;
             });
         }
 
         if (matches.length > 0) {
-            html += `<div class="autocomplete-section-title"><i data-lucide="database" class="sec-icon"></i> Account Matches</div>`;
+            html += `
+                <div class="ac-section-header">
+                    <div class="ac-section-title"><i data-lucide="database" class="sec-icon"></i> Indexed Account Matches</div>
+                    <span class="ac-section-count">${matches.length}</span>
+                </div>
+            `;
             matches.forEach(m => {
                 html += `
-                    <div class="autocomplete-item" data-id="${m.id}">
-                        <div class="item-left">
-                            <i data-lucide="user" class="acc-icon"></i>
-                            <span class="item-label mono">${m.id}</span>
+                    <div class="autocomplete-item" data-id="${m.id}" role="option">
+                        <div class="ac-item-main">
+                            <div class="ac-icon-wrap type-index">
+                                <i data-lucide="user"></i>
+                            </div>
+                            <div class="ac-text-group">
+                                <div class="ac-primary-row">
+                                    <span class="ac-account-id">${m.id}</span>
+                                    <span class="ac-badge ac-badge-index">ACCOUNT</span>
+                                </div>
+                                <div class="ac-desc">GNN score query · Multi-hop ego graph</div>
+                            </div>
                         </div>
-                        <span class="item-hint">Search Graph</span>
+                        <div class="ac-item-right">
+                            <span class="ac-action-hint">Inspect <i data-lucide="corner-down-left" style="width:10px;height:10px"></i></span>
+                        </div>
                     </div>
                 `;
             });
         }
 
+        // Add explicit keyboard navigation shortcuts & dataset scope metadata
+        html += `
+            <div class="autocomplete-footer">
+                <div class="ac-kbd-hints">
+                    <span><kbd class="ac-kbd">↑</kbd><kbd class="ac-kbd">↓</kbd> navigate</span>
+                    <span><kbd class="ac-kbd">↵</kbd> select</span>
+                    <span><kbd class="ac-kbd">esc</kbd> close</span>
+                </div>
+                <div class="ac-footer-meta">515,080 accounts indexed</div>
+            </div>
+        `;
+
         els.autocompleteDropdown.innerHTML = html;
         els.autocompleteDropdown.classList.remove('hidden');
         lucide.createIcons();
 
-        els.autocompleteDropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+        const items = els.autocompleteDropdown.querySelectorAll('.autocomplete-item');
+        items.forEach((item, index) => {
+            item.addEventListener('mouseenter', () => {
+                items.forEach(it => it.classList.remove('active'));
+                item.classList.add('active');
+                activeAutocompleteIndex = index;
+            });
             item.addEventListener('click', () => {
                 const id = item.dataset.id;
                 selectAccount(id);
                 els.autocompleteDropdown.classList.add('hidden');
-                els.globalSearchInput.value = '';
+                if (els.globalSearchInput) els.globalSearchInput.value = '';
             });
         });
     }
@@ -404,16 +576,47 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         els.globalSearchInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                if (els.autocompleteDropdown) els.autocompleteDropdown.classList.add('hidden');
+            const dropdown = els.autocompleteDropdown;
+            const isDropdownOpen = dropdown && !dropdown.classList.contains('hidden');
+            const items = isDropdownOpen ? Array.from(dropdown.querySelectorAll('.autocomplete-item')) : [];
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (items.length === 0) return;
+                activeAutocompleteIndex = (activeAutocompleteIndex + 1) % items.length;
+                items.forEach((it, idx) => {
+                    if (idx === activeAutocompleteIndex) {
+                        it.classList.add('active');
+                        it.scrollIntoView({ block: 'nearest' });
+                    } else {
+                        it.classList.remove('active');
+                    }
+                });
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (items.length === 0) return;
+                activeAutocompleteIndex = (activeAutocompleteIndex - 1 + items.length) % items.length;
+                items.forEach((it, idx) => {
+                    if (idx === activeAutocompleteIndex) {
+                        it.classList.add('active');
+                        it.scrollIntoView({ block: 'nearest' });
+                    } else {
+                        it.classList.remove('active');
+                    }
+                });
             } else if (e.key === 'Enter') {
-                const firstItem = els.autocompleteDropdown ? els.autocompleteDropdown.querySelector('.autocomplete-item') : null;
-                if (firstItem) {
-                    firstItem.click();
+                e.preventDefault();
+                if (activeAutocompleteIndex >= 0 && items[activeAutocompleteIndex]) {
+                    items[activeAutocompleteIndex].click();
+                } else if (items.length > 0) {
+                    items[0].click();
                 } else if (els.globalSearchInput.value.trim()) {
                     selectAccount(els.globalSearchInput.value.trim().toUpperCase());
-                    if (els.autocompleteDropdown) els.autocompleteDropdown.classList.add('hidden');
+                    if (dropdown) dropdown.classList.add('hidden');
                 }
+            } else if (e.key === 'Escape') {
+                if (dropdown) dropdown.classList.add('hidden');
+                els.globalSearchInput.blur();
             }
         });
     }
@@ -634,6 +837,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const subgraph = generateFilteredSubgraph(report, state.selectedChainIndex, serverSubgraph);
             state.currentSubgraph = subgraph;
 
+            isFrozen = false;
+            if (els.btnFreezeAccount) {
+                els.btnFreezeAccount.classList.remove('btn-frozen');
+                els.btnFreezeAccount.innerHTML = `<i data-lucide="lock"></i> <span>Freeze</span>`;
+            }
+
             // Render all UI components with defensive try/catch blocks
             try { renderBanner(report); } catch (e) { console.error('Banner error:', e); }
             try { renderGauge(report.gnn_assessment || {}); } catch (e) { console.error('Gauge error:', e); }
@@ -650,7 +859,10 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast(`Loaded analysis for ${accountId} (${statusLabel})`, subgraph.below_threshold ? 'info' : 'lime', 2500);
         } catch (err) {
             console.error('selectAccount error:', err);
-            showToast(err.message, 'critical', 4500);
+            const msg = err.message && (err.message.includes('404') || err.message.toLowerCase().includes('not found'))
+                ? `Account '${accountId}' not found in transaction graph. Try preset '811C2F680' or '100428660'.`
+                : err.message;
+            showToast(msg, 'critical', 5000);
         }
     }
 
@@ -663,9 +875,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (els.bannerActionText) els.bannerActionText.textContent = report.recommended_action || 'Priority Compliance Queue';
 
         const tier = (report.risk_tier || 'standard').toLowerCase();
+        const rawTier = (report.risk_tier || 'STANDARD').toUpperCase().trim();
+        let cleanTier = rawTier.endsWith('RISK') ? rawTier : `${rawTier} RISK`;
+        if (rawTier === 'STANDARD / LOW RISK') cleanTier = 'STANDARD RISK';
+        if (rawTier === 'ELEVATED REVIEW') cleanTier = 'ELEVATED RISK';
+
         if (els.bannerRiskBadge) {
-            els.bannerRiskBadge.className = `risk-badge pill badge-${tier}`;
-            if (els.bannerRiskLabel) els.bannerRiskLabel.textContent = `${(report.risk_tier || 'STANDARD').toUpperCase()} RISK`;
+            if (isFrozen) {
+                els.bannerRiskBadge.className = 'risk-badge pill badge-frozen';
+                if (els.bannerRiskLabel) els.bannerRiskLabel.textContent = 'FROZEN (COMPLIANCE HOLD)';
+            } else {
+                els.bannerRiskBadge.className = `risk-badge pill badge-${tier}`;
+                if (els.bannerRiskLabel) els.bannerRiskLabel.textContent = cleanTier;
+            }
         }
 
         let iconName = 'alert-triangle';
@@ -687,7 +909,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const bannerEl = document.getElementById('account-banner');
         if (bannerEl) bannerEl.style.borderLeftColor = bannerBorderColor;
-        if (els.bannerRiskIcon) els.bannerRiskIcon.setAttribute('data-lucide', iconName);
+        if (els.bannerRiskIcon) els.bannerRiskIcon.setAttribute('data-lucide', isFrozen ? 'lock' : iconName);
         lucide.createIcons();
     }
 
@@ -699,21 +921,66 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Freeze Account Button Simulation
+    // Two-Step Emergency Freeze Compliance Guardrail
     let isFrozen = false;
+    const freezeBackdrop = document.getElementById('freeze-modal-backdrop');
+    const freezeModalAccId = document.getElementById('freeze-modal-account-id');
+    const freezeModalRiskTier = document.getElementById('freeze-modal-risk-tier');
+    const freezeReasonSelect = document.getElementById('freeze-reason-select');
+    const freezeNotesInput = document.getElementById('freeze-notes-input');
+    const btnCancelFreeze = document.getElementById('btn-cancel-freeze');
+    const btnCloseFreezeModal = document.getElementById('btn-close-freeze-modal');
+    const btnConfirmFreeze = document.getElementById('btn-confirm-freeze');
+
+    function openFreezeModal() {
+        if (!freezeBackdrop) return;
+        if (freezeModalAccId) freezeModalAccId.textContent = state.currentAccountId || 'N/A';
+        const tier = state.currentReport ? state.currentReport.risk_tier : 'HIGH RISK';
+        const prob = state.currentReport && state.currentReport.gnn_assessment ? (state.currentReport.gnn_assessment.mule_probability * 100).toFixed(1) + '%' : '70.0%';
+        if (freezeModalRiskTier) freezeModalRiskTier.textContent = `${tier} (${prob})`;
+        freezeBackdrop.classList.remove('hidden');
+        if (freezeReasonSelect) freezeReasonSelect.focus();
+        lucide.createIcons();
+    }
+
+    function closeFreezeModal() {
+        if (freezeBackdrop) freezeBackdrop.classList.add('hidden');
+    }
+
+    if (btnCancelFreeze) btnCancelFreeze.addEventListener('click', closeFreezeModal);
+    if (btnCloseFreezeModal) btnCloseFreezeModal.addEventListener('click', closeFreezeModal);
+
+    if (btnConfirmFreeze) {
+        btnConfirmFreeze.addEventListener('click', () => {
+            isFrozen = true;
+            const reason = freezeReasonSelect ? freezeReasonSelect.options[freezeReasonSelect.selectedIndex].text : 'Immediate Asset Flight Risk';
+            if (els.btnFreezeAccount) {
+                els.btnFreezeAccount.classList.add('btn-frozen');
+                els.btnFreezeAccount.innerHTML = `<i data-lucide="unlock"></i> <span>Unfreeze</span>`;
+            }
+            if (els.bannerRiskBadge) {
+                els.bannerRiskBadge.className = 'risk-badge pill badge-frozen';
+                if (els.bannerRiskLabel) els.bannerRiskLabel.textContent = 'FROZEN (COMPLIANCE HOLD)';
+            }
+            if (els.bannerRiskIcon) els.bannerRiskIcon.setAttribute('data-lucide', 'lock');
+            closeFreezeModal();
+            showToast(`EMERGENCY COMPLIANCE FREEZE enacted on ${state.currentAccountId} (${reason})`, 'critical', 4000);
+            lucide.createIcons();
+        });
+    }
+
     if (els.btnFreezeAccount) {
         els.btnFreezeAccount.addEventListener('click', () => {
-            isFrozen = !isFrozen;
             if (isFrozen) {
-                els.btnFreezeAccount.classList.add('btn-frozen');
-                els.btnFreezeAccount.innerHTML = `<i data-lucide="check"></i> <span>Frozen</span>`;
-                showToast(`EMERGENCY FREEZE enacted on ${state.currentAccountId}`, 'critical', 3500);
-            } else {
+                isFrozen = false;
                 els.btnFreezeAccount.classList.remove('btn-frozen');
                 els.btnFreezeAccount.innerHTML = `<i data-lucide="lock"></i> <span>Freeze</span>`;
-                showToast(`Account ${state.currentAccountId} un-frozen`, 'info', 2000);
+                renderBanner(state.currentReport);
+                showToast(`Compliance freeze lifted on ${state.currentAccountId}`, 'info', 2500);
+                lucide.createIcons();
+            } else {
+                openFreezeModal();
             }
-            lucide.createIcons();
         });
     }
 
@@ -810,18 +1077,32 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const AML_FEATURE_INFO = {
+            'has_outflow_after_inflow': { label: 'Rapid Pass-Through Velocity', desc: 'Outflow immediately following inflow (hallmark mule pass-through signature)' },
+            'pagerank': { label: 'Network Centrality Hub', desc: 'Recursive graph prestige / hub centrality within global transaction network' },
+            'total_out': { label: 'Total Outbound Volume ($)', desc: 'Aggregate outgoing transfer amounts across monitored window' },
+            'total_in': { label: 'Total Inbound Volume ($)', desc: 'Aggregate incoming transfer amounts across monitored window' },
+            'out_degree': { label: 'Outbound Fan-Out Count', desc: 'Number of distinct recipient counterparties' },
+            'in_degree': { label: 'Inbound Fan-In Count', desc: 'Number of distinct sending counterparties' },
+            'unique_counterparties': { label: 'Total Counterparty Footprint', desc: 'Combined count of unique sending and receiving counterparties' },
+            'avg_holding_time': { label: 'Average Holding Duration', desc: 'Mean transit time funds remain held before disbursement' }
+        };
+
         let html = '';
         topFeatures.slice(0, 4).forEach((feat, idx) => {
             const isHighlight = idx < 3; // Top 3 are lime
             const score = typeof feat.score === 'number' ? feat.score : (feat.importance_score || 0);
             const pct = Math.min(Math.max(Math.round(score * 100), 0), 100);
             const scoreFormatted = (score * 100).toFixed(1) + '%';
-            const cleanName = (feat.feature || '').replace(/_/g, ' ');
+            const rawKey = feat.feature || '';
+            const mapped = AML_FEATURE_INFO[rawKey];
+            const cleanName = mapped ? mapped.label : rawKey.replace(/_/g, ' ');
+            const desc = mapped ? mapped.desc : `GNN attribution score ${(score * 100).toFixed(2)}%`;
 
             html += `
-                <div class="feat-bar-row" title="${feat.feature || ''}: attribution score ${(score * 100).toFixed(2)}%">
+                <div class="feat-bar-row" title="${desc}">
                     <div class="feat-bar-labels">
-                        <span class="feat-name">${cleanName}</span>
+                        <span class="feat-name" style="font-weight: 500;">${cleanName}</span>
                         <span class="feat-score mono ${isHighlight ? 'accent-text' : ''}">${scoreFormatted}</span>
                     </div>
                     <div class="feat-track">
@@ -1216,6 +1497,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const AML_FEATURE_INFO = {
+            'has_outflow_after_inflow': { label: 'Rapid Pass-Through Velocity', desc: 'Outflow immediately following inflow (hallmark mule pass-through signature)' },
+            'pagerank': { label: 'Network Centrality Hub', desc: 'Recursive graph prestige / hub centrality within global transaction network' },
+            'total_out': { label: 'Total Outbound Volume ($)', desc: 'Aggregate outgoing transfer amounts across monitored window' },
+            'total_in': { label: 'Total Inbound Volume ($)', desc: 'Aggregate incoming transfer amounts across monitored window' },
+            'out_degree': { label: 'Outbound Fan-Out Count', desc: 'Number of distinct recipient counterparties' },
+            'in_degree': { label: 'Inbound Fan-In Count', desc: 'Number of distinct sending counterparties' },
+            'unique_counterparties': { label: 'Total Counterparty Footprint', desc: 'Combined count of unique sending and receiving counterparties' },
+            'avg_holding_time': { label: 'Average Holding Duration', desc: 'Mean transit time funds remain held before disbursement' }
+        };
+
         // All features attribution bars
         let featHtml = '';
         gnn.all_features.forEach((feat, idx) => {
@@ -1223,12 +1515,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const score = typeof feat.score === 'number' ? feat.score : (feat.importance_score || 0);
             const pct = Math.min(Math.max(Math.round(score * 100), 0), 100);
             const scoreFormatted = (score * 100).toFixed(1) + '%';
-            const cleanName = (feat.feature || '').replace(/_/g, ' ');
+            const rawKey = feat.feature || '';
+            const mapped = AML_FEATURE_INFO[rawKey];
+            const cleanName = mapped ? mapped.label : rawKey.replace(/_/g, ' ');
+            const desc = mapped ? mapped.desc : `GNN attribution score ${(score * 100).toFixed(2)}%`;
 
             featHtml += `
-                <div class="feat-bar-row" title="${feat.feature || ''}: attribution score ${(score * 100).toFixed(2)}%">
+                <div class="feat-bar-row" title="${desc}">
                     <div class="feat-bar-labels">
-                        <span class="feat-name">${cleanName}</span>
+                        <span class="feat-name" style="font-weight: 500;">${cleanName}</span>
                         <span class="feat-score mono ${isHighlight ? 'accent-text' : ''}">${scoreFormatted}</span>
                     </div>
                     <div class="feat-track">
@@ -2081,8 +2376,10 @@ document.addEventListener('DOMContentLoaded', () => {
         resizeCanvas();
 
         const rect = els.canvas.parentElement.getBoundingClientRect();
-        const cx = (rect.width && rect.width > 0) ? rect.width / 2 : 300;
-        const cy = (rect.height && rect.height > 0) ? rect.height / 2 : 300;
+        const canvasW = (rect.width && rect.width > 0) ? rect.width : (els.canvas.width || 600);
+        const canvasH = (rect.height && rect.height > 0) ? rect.height : (els.canvas.height || 450);
+        const cx = canvasW / 2;
+        const cy = canvasH / 2;
 
         state.nodePositions = {};
         const nodes = subgraph.nodes || [];
@@ -2108,6 +2405,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ...node,
                     x: cx,
                     y: cy,
+                    baselineX: cx,
+                    baselineY: cy,
                     vx: 0,
                     vy: 0,
                     radius: 22,
@@ -2115,23 +2414,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
             });
         } else if (subgraph.is_chain) {
-            // Case B: Full Sequential Chain -> Ordered horizontal arc/wave from Source to Sink
-            const spacing = Math.min(Math.max((rect.width - 240) / Math.max(total - 1, 1), 110), 220);
+            // Case B: Full Sequential Chain -> Ordered horizontal sequence from Source to Sink
+            const spacing = Math.min(Math.max((canvasW - 160) / Math.max(total - 1, 1), 180), 280);
             const startX = cx - ((total - 1) * spacing) / 2;
 
             nodes.forEach((node, i) => {
                 const x = startX + i * spacing;
-                const yOffset = (i % 2 === 0 ? -1 : 1) * (total > 2 ? 32 : 0);
+                // Subtle alternating vertical offset only if 4 or more nodes, otherwise clean horizontal baseline
+                const yOffset = total > 4 ? (i % 2 === 0 ? -16 : 16) : 0;
                 const y = cy + yOffset;
 
                 state.nodePositions[node.id] = {
                     ...node,
                     x: x,
                     y: y,
+                    baselineX: x,
+                    baselineY: y,
                     vx: 0,
                     vy: 0,
-                    radius: node.is_target ? 22 : (node.role === 'source' || node.role === 'sink' ? 19 : 16),
-                    isPinned: node.is_target
+                    radius: node.is_target ? 24 : (node.role === 'source' || node.role === 'sink' ? 21 : 18),
+                    isPinned: true // All chain nodes pinned in structured sequence
                 };
             });
         } else {
@@ -2142,6 +2444,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         ...node,
                         x: cx,
                         y: cy,
+                        baselineX: cx,
+                        baselineY: cy,
                         vx: 0,
                         vy: 0,
                         radius: 22,
@@ -2150,10 +2454,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     const angle = (i / Math.max(total, 1)) * Math.PI * 2;
                     const dist = 160 + (i % 2) * 40;
+                    const nx = cx + Math.cos(angle) * dist;
+                    const ny = cy + Math.sin(angle) * dist;
                     state.nodePositions[node.id] = {
                         ...node,
-                        x: cx + Math.cos(angle) * dist,
-                        y: cy + Math.sin(angle) * dist,
+                        x: nx,
+                        y: ny,
+                        baselineX: nx,
+                        baselineY: ny,
                         vx: (Math.random() - 0.5) * 2,
                         vy: (Math.random() - 0.5) * 2,
                         radius: 15,
@@ -2163,30 +2471,138 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        fitGraphToScreen();
+        // Fit entire topology inside screen bounds with padding
+        fitGraphToScreen(75, false);
 
         if (!state.animFrameId) {
             runGraphLoop();
         }
     }
 
-    function fitGraphToScreen() {
-        state.canvasTransform.x = 0;
-        state.canvasTransform.y = 0;
-        state.canvasTransform.scale = 1;
+    function fitGraphToScreen(padding = 75, animated = false) {
+        if (!els.canvas) return;
+        const rect = els.canvas.parentElement.getBoundingClientRect();
+        const canvasW = (rect.width && rect.width > 0) ? rect.width : (els.canvas.width || 600);
+        const canvasH = (rect.height && rect.height > 0) ? rect.height : (els.canvas.height || 450);
+
+        const nodes = Object.values(state.nodePositions);
+        if (nodes.length === 0) {
+            state.canvasTransform.x = 0;
+            state.canvasTransform.y = 0;
+            state.canvasTransform.scale = 1;
+            return;
+        }
+
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        nodes.forEach(n => {
+            const r = (n.radius || 20) + 25; // Include label and badge margins
+            if (n.x - r < minX) minX = n.x - r;
+            if (n.x + r > maxX) maxX = n.x + r;
+            if (n.y - r < minY) minY = n.y - r;
+            if (n.y + r > maxY) maxY = n.y + r;
+        });
+
+        const graphW = Math.max(maxX - minX, 1);
+        const graphH = Math.max(maxY - minY, 1);
+        const availW = Math.max(canvasW - padding * 2, 80);
+        const availH = Math.max(canvasH - padding * 2, 80);
+
+        const fitScale = Math.min(availW / graphW, availH / graphH, 1.25);
+        const minScale = nodes.length <= 4 ? 1.05 : 0.45;
+        const targetScale = Math.max(minScale, Math.min(fitScale, 1.25));
+
+        const midX = (minX + maxX) / 2;
+        const midY = (minY + maxY) / 2;
+
+        const targetX = (canvasW / 2) - midX * targetScale;
+        const targetY = (canvasH / 2) - midY * targetScale;
+
+        if (state.cameraAnimFrame) {
+            cancelAnimationFrame(state.cameraAnimFrame);
+            state.cameraAnimFrame = null;
+        }
+
+        if (!animated) {
+            state.canvasTransform.scale = targetScale;
+            state.canvasTransform.x = targetX;
+            state.canvasTransform.y = targetY;
+            return;
+        }
+
+        const startX = state.canvasTransform.x;
+        const startY = state.canvasTransform.y;
+        const startScale = state.canvasTransform.scale;
+        const startTime = performance.now();
+        const duration = 280;
+
+        function animateFit(now) {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const ease = 1 - Math.pow(1 - progress, 3);
+
+            state.canvasTransform.x = startX + (targetX - startX) * ease;
+            state.canvasTransform.y = startY + (targetY - startY) * ease;
+            state.canvasTransform.scale = startScale + (targetScale - startScale) * ease;
+
+            if (progress < 1) {
+                state.cameraAnimFrame = requestAnimationFrame(animateFit);
+            } else {
+                state.cameraAnimFrame = null;
+            }
+        }
+        state.cameraAnimFrame = requestAnimationFrame(animateFit);
     }
 
-    function focusNodeInCanvas(nodeId) {
+    function focusNodeInCanvas(nodeId, animated = true) {
         const node = state.nodePositions[nodeId];
         if (!node || !els.canvas) return;
         const rect = els.canvas.parentElement.getBoundingClientRect();
-        const cx = rect.width / 2;
-        const cy = rect.height / 2;
+        const canvasW = (rect.width && rect.width > 0) ? rect.width : (els.canvas.width || 600);
+        const canvasH = (rect.height && rect.height > 0) ? rect.height : (els.canvas.height || 450);
+        const cx = canvasW / 2;
+        const cy = canvasH / 2;
 
-        state.canvasTransform.x = cx - node.x;
-        state.canvasTransform.y = cy - node.y;
-        state.canvasTransform.scale = 1.35;
         state.selectedNodeId = nodeId;
+
+        // Choose focus scale and compute precise center coordinates
+        const targetScale = 1.25;
+        const targetX = cx - node.x * targetScale;
+        const targetY = cy - node.y * targetScale;
+
+        if (state.cameraAnimFrame) {
+            cancelAnimationFrame(state.cameraAnimFrame);
+            state.cameraAnimFrame = null;
+        }
+
+        if (!animated) {
+            state.canvasTransform.scale = targetScale;
+            state.canvasTransform.x = targetX;
+            state.canvasTransform.y = targetY;
+            return;
+        }
+
+        const startX = state.canvasTransform.x;
+        const startY = state.canvasTransform.y;
+        const startScale = state.canvasTransform.scale;
+        const startTime = performance.now();
+        const duration = 280;
+
+        function animateFocus(now) {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const ease = 1 - Math.pow(1 - progress, 3);
+
+            state.canvasTransform.x = startX + (targetX - startX) * ease;
+            state.canvasTransform.y = startY + (targetY - startY) * ease;
+            state.canvasTransform.scale = startScale + (targetScale - startScale) * ease;
+
+            if (progress < 1) {
+                state.cameraAnimFrame = requestAnimationFrame(animateFocus);
+            } else {
+                state.cameraAnimFrame = null;
+            }
+        }
+        state.cameraAnimFrame = requestAnimationFrame(animateFocus);
     }
 
     // Physics Simulation Step
@@ -2196,7 +2612,38 @@ document.addEventListener('DOMContentLoaded', () => {
         const nodes = Object.values(state.nodePositions);
         const edges = state.currentSubgraph.edges || [];
 
-        // 1. Repulsion between all node pairs
+        // Case 1: Sequential Chain Graph -> Maintain clean sequence with gentle relaxation
+        if (state.currentSubgraph.is_chain) {
+            nodes.forEach(n => {
+                if (n === state.draggedNode) return;
+                if (n.baselineX !== undefined && n.baselineY !== undefined) {
+                    const dx = n.baselineX - n.x;
+                    const dy = n.baselineY - n.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist > 0.5) {
+                        n.vx = (n.vx || 0) + dx * 0.08;
+                        n.vy = (n.vy || 0) + dy * 0.08;
+                        n.vx *= 0.75;
+                        n.vy *= 0.75;
+                        n.x += n.vx;
+                        n.y += n.vy;
+                    } else {
+                        n.x = n.baselineX;
+                        n.y = n.baselineY;
+                        n.vx = 0;
+                        n.vy = 0;
+                    }
+                }
+            });
+            return;
+        }
+
+        // Case 2: Radial / Complex Ego-Network
+        const rect = els.canvas.parentElement.getBoundingClientRect();
+        const cx = (rect.width && rect.width > 0) ? rect.width / 2 : 300;
+        const cy = (rect.height && rect.height > 0) ? rect.height / 2 : 300;
+
+        // 1. Repulsion between all node pairs with collision damping
         for (let i = 0; i < nodes.length; i++) {
             for (let j = i + 1; j < nodes.length; j++) {
                 const n1 = nodes[i];
@@ -2205,8 +2652,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const dy = n2.y - n1.y;
                 const dist = Math.hypot(dx, dy) || 1;
 
-                if (dist < 320) {
-                    const force = 1800 / (dist * dist);
+                if (dist < 360) {
+                    const minDist = (n1.radius || 18) + (n2.radius || 18) + 42; // ~78px separation
+                    let force;
+                    if (dist < minDist) {
+                        // Strong collision repulsion damping to prevent overlapping nodes & edge chips
+                        force = Math.min(10.0, 1600 / (dist * dist) + (minDist - dist) * 0.16);
+                    } else {
+                        const effectiveDist = Math.max(dist, 45);
+                        const rawForce = 2200 / (effectiveDist * effectiveDist);
+                        force = Math.min(rawForce, 6.0);
+                    }
                     const fx = (dx / dist) * force;
                     const fy = (dy / dist) * force;
 
@@ -2225,24 +2681,46 @@ document.addEventListener('DOMContentLoaded', () => {
             const dx = target.x - source.x;
             const dy = target.y - source.y;
             const dist = Math.hypot(dx, dy) || 1;
-            const idealDist = edge.in_chain ? 130 : 180;
+            const idealDist = 160;
             const displacement = dist - idealDist;
-            const springK = edge.in_chain ? 0.04 : 0.02;
+            const springK = 0.025;
 
-            const fx = (dx / dist) * displacement * springK;
-            const fy = (dy / dist) * displacement * springK;
+            const rawForce = displacement * springK;
+            const force = Math.max(-8.0, Math.min(8.0, rawForce)); // Clamp spring force
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
 
             if (!source.isPinned) { source.vx += fx; source.vy += fy; }
             if (!target.isPinned) { target.vx += fx; target.vy += fy; }
         });
 
-        // 3. Position update and damping
+        // 3. Centering force, velocity clamp, and damping
         nodes.forEach(n => {
             if (!n.isPinned && n !== state.draggedNode) {
-                n.vx *= 0.88;
-                n.vy *= 0.88;
+                // Centering gravity pull
+                n.vx += (cx - n.x) * 0.003;
+                n.vy += (cy - n.y) * 0.003;
+
+                n.vx *= 0.85;
+                n.vy *= 0.85;
+
+                // Max velocity clamp
+                const speed = Math.hypot(n.vx, n.vy);
+                if (speed > 8) {
+                    n.vx = (n.vx / speed) * 8;
+                    n.vy = (n.vy / speed) * 8;
+                }
+
                 n.x += n.vx;
                 n.y += n.vy;
+            }
+
+            // Finite coordinate safety check
+            if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) {
+                n.x = cx;
+                n.y = cy;
+                n.vx = 0;
+                n.vy = 0;
             }
         });
     }
@@ -2262,10 +2740,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.currentSubgraph.below_threshold) {
             ctx.save();
             ctx.textAlign = 'center';
-            ctx.font = '600 13px Inter, sans-serif';
+            ctx.font = '600 13px "Public Sans", sans-serif';
             ctx.fillStyle = state.theme === 'dark' ? '#94A3B8' : '#475569';
             ctx.fillText('Account risk is below mule threshold (52.5%).', rect.width / 2, rect.height - 38);
-            ctx.font = '400 12px Inter, sans-serif';
+            ctx.font = '400 12px "Public Sans", sans-serif';
             ctx.fillStyle = state.theme === 'dark' ? '#64748B' : '#94A3B8';
             ctx.fillText('No suspicious multi-hop laundering network loaded.', rect.width / 2, rect.height - 20);
             ctx.restore();
@@ -2313,12 +2791,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 const dotX = u.x + (v.x - u.x) * dotProgress;
                 const dotY = u.y + (v.y - u.y) * dotProgress;
 
-                ctx.fillStyle = '#B6FF2E';
+                ctx.fillStyle = state.theme === 'dark' ? '#B6FF2E' : '#15803D';
                 ctx.beginPath();
                 ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
                 ctx.fill();
+
+                // Sleek transaction flow amount pill on chain edge (declutter when zoomed far out)
+                if (edge.amount && (edge.in_chain || state.canvasTransform.scale >= 0.75 || isHovered)) {
+                    const midEdgeX = (u.x + v.x) / 2;
+                    const midEdgeY = (u.y + v.y) / 2 - 12;
+                    const amtStr = `$${Number(edge.amount).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                    ctx.save();
+                    ctx.font = '600 10px "JetBrains Mono", monospace';
+                    const textW = ctx.measureText(amtStr).width;
+                    ctx.fillStyle = state.theme === 'dark' ? 'rgba(15, 17, 23, 0.9)' : 'rgba(255, 255, 255, 0.9)';
+                    const chipX = midEdgeX - textW / 2 - 6;
+                    const chipY = midEdgeY - 8;
+                    const chipW = textW + 12;
+                    const chipH = 16;
+                    if (ctx.roundRect) {
+                        ctx.beginPath();
+                        ctx.roundRect(chipX, chipY, chipW, chipH, 4);
+                        ctx.fill();
+                        ctx.strokeStyle = state.theme === 'dark' ? 'rgba(255, 77, 94, 0.45)' : 'rgba(220, 38, 38, 0.45)';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                    } else {
+                        ctx.fillRect(chipX, chipY, chipW, chipH);
+                    }
+                    ctx.fillStyle = state.theme === 'dark' ? '#F8FAFC' : '#0F172A';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(amtStr, midEdgeX, midEdgeY);
+                    ctx.restore();
+                }
             } else if (edge.importance > 0.6) {
-                ctx.strokeStyle = '#FF8A3D';
+                ctx.strokeStyle = state.theme === 'dark' ? '#FF8A3D' : '#C2410C';
                 ctx.lineWidth = 2.5;
                 ctx.stroke();
             } else {
@@ -2329,6 +2837,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Draw directed arrowhead
+            const isDark = state.theme === 'dark';
             const headlen = 8;
             const angle = Math.atan2(v.y - u.y, v.x - u.x);
             const arrowX = v.x - Math.cos(angle) * (v.radius + 3);
@@ -2339,7 +2848,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.lineTo(arrowX - headlen * Math.cos(angle - Math.PI / 6), arrowY - headlen * Math.sin(angle - Math.PI / 6));
             ctx.lineTo(arrowX - headlen * Math.cos(angle + Math.PI / 6), arrowY - headlen * Math.sin(angle + Math.PI / 6));
             ctx.closePath();
-            ctx.fillStyle = edge.in_chain ? '#FF4D5E' : (edge.importance > 0.6 ? '#FF8A3D' : '#565C6B');
+            ctx.fillStyle = edge.in_chain ? (isDark ? '#FF4D5E' : '#DC2626') : (edge.importance > 0.6 ? (isDark ? '#FF8A3D' : '#C2410C') : (isDark ? '#565C6B' : '#94A3B8'));
             ctx.fill();
 
             ctx.restore();
@@ -2353,25 +2862,26 @@ document.addEventListener('DOMContentLoaded', () => {
             const isSink = node.role === 'sink';
             const isSelected = node.id === state.selectedNodeId;
             const isHovered = node.id === state.hoveredNodeId;
+            const isDark = state.theme === 'dark';
 
             ctx.save();
 
             // Glow effect
             if (isTarget) {
-                ctx.shadowColor = node.is_clean ? 'rgba(45, 212, 191, 0.5)' : 'rgba(255, 77, 94, 0.5)';
+                ctx.shadowColor = node.is_clean ? (isDark ? 'rgba(45, 212, 191, 0.5)' : 'rgba(13, 148, 136, 0.4)') : (isDark ? 'rgba(255, 77, 94, 0.5)' : 'rgba(220, 38, 38, 0.4)');
                 ctx.shadowBlur = 16;
             } else if (isSelected) {
-                ctx.shadowColor = 'rgba(182, 255, 46, 0.8)';
+                ctx.shadowColor = isDark ? 'rgba(182, 255, 46, 0.8)' : 'rgba(21, 128, 61, 0.5)';
                 ctx.shadowBlur = 20;
             }
 
             // Fill color
-            let fillColor = '#60A5FA';
-            if (node.is_clean) fillColor = '#2DD4BF';
-            else if (isTarget) fillColor = '#FF4D5E';
-            else if (isSource) fillColor = '#2DD4BF';
-            else if (isSink) fillColor = '#A78BFA';
-            else if (isChain) fillColor = '#FF8A3D';
+            let fillColor = isDark ? '#60A5FA' : '#2563EB';
+            if (node.is_clean) fillColor = isDark ? '#2DD4BF' : '#0D9488';
+            else if (isTarget) fillColor = isDark ? '#FF4D5E' : '#DC2626';
+            else if (isSource) fillColor = isDark ? '#2DD4BF' : '#0D9488';
+            else if (isSink) fillColor = isDark ? '#A78BFA' : '#7C3AED';
+            else if (isChain) fillColor = isDark ? '#FF8A3D' : '#C2410C';
 
             ctx.beginPath();
             ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
@@ -2383,31 +2893,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Double ring
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, node.radius + 4, 0, Math.PI * 2);
-                ctx.strokeStyle = node.is_clean ? 'rgba(45, 212, 191, 0.45)' : 'rgba(255, 77, 94, 0.45)';
+                ctx.strokeStyle = node.is_clean ? (isDark ? 'rgba(45, 212, 191, 0.45)' : 'rgba(13, 148, 136, 0.45)') : (isDark ? 'rgba(255, 77, 94, 0.45)' : 'rgba(220, 38, 38, 0.45)');
                 ctx.lineWidth = 2.5;
                 ctx.stroke();
 
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, node.radius + 8, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(15, 23, 42, 0.15)';
                 ctx.lineWidth = 1.5;
                 ctx.stroke();
             } else if (isSource) {
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, node.radius + 3, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(45, 212, 191, 0.55)';
+                ctx.strokeStyle = isDark ? 'rgba(45, 212, 191, 0.55)' : 'rgba(13, 148, 136, 0.55)';
                 ctx.lineWidth = 2;
                 ctx.stroke();
             } else if (isSink) {
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, node.radius + 3, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(167, 139, 250, 0.55)';
+                ctx.strokeStyle = isDark ? 'rgba(167, 139, 250, 0.55)' : 'rgba(124, 58, 237, 0.55)';
                 ctx.lineWidth = 2;
                 ctx.stroke();
             } else if (isChain) {
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, node.radius + 3, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(255, 138, 61, 0.5)';
+                ctx.strokeStyle = isDark ? 'rgba(255, 138, 61, 0.5)' : 'rgba(194, 65, 12, 0.5)';
                 ctx.lineWidth = 2;
                 ctx.stroke();
             }
@@ -2416,23 +2926,41 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isSelected) {
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, node.radius + 5, 0, Math.PI * 2);
-                ctx.strokeStyle = '#B6FF2E';
+                ctx.strokeStyle = isDark ? '#B6FF2E' : '#15803D';
                 ctx.lineWidth = 2.5;
                 ctx.stroke();
             }
 
-            // Pinned indicator glyph
-            if (node.isPinned && !isTarget) {
-                ctx.fillStyle = '#B6FF2E';
+            // Pinned indicator glyph (for manually pinned nodes in non-chain views)
+            if (node.isPinned && !isTarget && (!state.currentSubgraph || !state.currentSubgraph.is_chain)) {
+                ctx.fillStyle = isDark ? '#B6FF2E' : '#15803D';
                 ctx.beginPath();
                 ctx.arc(node.x + node.radius - 2, node.y - node.radius + 2, 3.5, 0, Math.PI * 2);
                 ctx.fill();
             }
 
-            // Monospace Node Label
-            if (isTarget || isChain || isSource || isSink || isHovered || state.canvasTransform.scale > 1.2) {
+            // Role / Hop badge above node
+            const roleBadge = isTarget ? 'TARGET MULE' : (node.roleLabel ? node.roleLabel.toUpperCase() : (node.role ? node.role.toUpperCase() : ''));
+            const hopText = node.chain_hop ? `HOP ${node.chain_hop}` : '';
+            const topBadgeText = hopText ? `${hopText} · ${roleBadge}` : roleBadge;
+            const showTopBadge = topBadgeText && (isTarget || isChain || isSource || isSink || isHovered || state.canvasTransform.scale > 1.05);
+            if (showTopBadge) {
+                ctx.font = '700 9px "Public Sans", sans-serif';
+                let tagColor = isDark ? '#94A3B8' : '#475569';
+                if (isTarget) tagColor = node.is_clean ? (isDark ? '#2DD4BF' : '#0D9488') : (isDark ? '#FF4D5E' : '#DC2626');
+                else if (isSource) tagColor = isDark ? '#2DD4BF' : '#0D9488';
+                else if (isSink) tagColor = isDark ? '#A78BFA' : '#7C3AED';
+                else if (isChain) tagColor = isDark ? '#FF8A3D' : '#C2410C';
+                ctx.fillStyle = tagColor;
+                ctx.textAlign = 'center';
+                ctx.fillText(topBadgeText, node.x, node.y - node.radius - 8);
+            }
+
+            // Monospace Node Label below node (declutter minor non-chain nodes when zoomed out < 0.85)
+            const showBottomLabel = isTarget || isChain || isSource || isSink || isHovered || (state.canvasTransform.scale >= 0.85);
+            if (showBottomLabel) {
                 ctx.shadowBlur = 0;
-                ctx.font = '500 11px JetBrains Mono, monospace';
+                ctx.font = '500 11px "JetBrains Mono", monospace';
                 ctx.fillStyle = state.theme === 'dark' ? '#F8FAFC' : '#14161B';
                 ctx.textAlign = 'center';
                 ctx.fillText(node.id, node.x, node.y + node.radius + 15);
@@ -2481,6 +3009,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.draggedNode = clickedNode;
                 clickedNode.isPinned = true;
                 state.selectedNodeId = clickedNode.id;
+
+                // Sync left panel stepper selection card if visible
+                if (els.stepperTimeline) {
+                    const card = els.stepperTimeline.querySelector(`.stepper-card[data-account="${clickedNode.id}"]`);
+                    if (card) {
+                        els.stepperTimeline.querySelectorAll('.stepper-card').forEach(c => c.classList.remove('selected', 'active-account'));
+                        card.classList.add('selected', 'active-account');
+                        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }
             } else {
                 state.canvasTransform.isDragging = true;
                 state.canvasTransform.startX = clientX - state.canvasTransform.x;
@@ -2514,6 +3052,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         window.addEventListener('mouseup', () => {
+            if (state.draggedNode) {
+                state.draggedNode.baselineX = state.draggedNode.x;
+                state.draggedNode.baselineY = state.draggedNode.y;
+            }
             state.draggedNode = null;
             state.canvasTransform.isDragging = false;
         });
@@ -2573,31 +3115,49 @@ document.addEventListener('DOMContentLoaded', () => {
         if (els.nodeTooltip) els.nodeTooltip.classList.add('hidden');
     }
 
+    function zoomCanvasAtCenter(factor) {
+        if (!els.canvas) return;
+        const rect = els.canvas.parentElement.getBoundingClientRect();
+        const canvasW = (rect.width && rect.width > 0) ? rect.width : (els.canvas.width || 600);
+        const canvasH = (rect.height && rect.height > 0) ? rect.height : (els.canvas.height || 450);
+        const cx = canvasW / 2;
+        const cy = canvasH / 2;
+
+        const oldScale = state.canvasTransform.scale;
+        const newScale = Math.min(Math.max(oldScale * factor, 0.35), 3.5);
+
+        state.canvasTransform.x = cx - (cx - state.canvasTransform.x) * (newScale / oldScale);
+        state.canvasTransform.y = cy - (cy - state.canvasTransform.y) * (newScale / oldScale);
+        state.canvasTransform.scale = newScale;
+    }
+
     // Canvas Floating Cluster Buttons
     if (els.btnZoomIn) {
         els.btnZoomIn.addEventListener('click', () => {
-            state.canvasTransform.scale = Math.min(state.canvasTransform.scale * 1.25, 3.5);
+            zoomCanvasAtCenter(1.25);
         });
     }
 
     if (els.btnZoomOut) {
         els.btnZoomOut.addEventListener('click', () => {
-            state.canvasTransform.scale = Math.max(state.canvasTransform.scale * 0.8, 0.35);
+            zoomCanvasAtCenter(0.8);
         });
     }
 
     if (els.btnFitScreen) {
         els.btnFitScreen.addEventListener('click', () => {
-            fitGraphToScreen();
+            fitGraphToScreen(75, true);
         });
     }
 
     if (els.btnTogglePhysics) {
         els.btnTogglePhysics.addEventListener('click', () => {
             state.physicsEnabled = !state.physicsEnabled;
-            if (els.physicsIcon) els.physicsIcon.setAttribute('data-lucide', state.physicsEnabled ? 'play' : 'pause');
+            if (els.physicsIcon) {
+                els.physicsIcon.setAttribute('data-lucide', state.physicsEnabled ? 'pause' : 'play');
+            }
             lucide.createIcons();
-            showToast(`Physics simulation ${state.physicsEnabled ? 'resumed' : 'paused'}`, 'info', 1500);
+            showToast(`Physics layout ${state.physicsEnabled ? 'resumed' : 'paused'}`, 'info', 1500);
         });
     }
 
@@ -2634,6 +3194,8 @@ document.addEventListener('DOMContentLoaded', () => {
             state.selectedNodeId = null;
             state.hoveredNodeId = null;
             hideNodeTooltip();
+            if (els.searchSuggestions) els.searchSuggestions.classList.add('hidden');
+            if (els.autocompleteDropdown) els.autocompleteDropdown.classList.add('hidden');
             if (els.canvasTableAlt) els.canvasTableAlt.classList.add('hidden');
             if (els.downloadDropdown) els.downloadDropdown.classList.add('hidden');
             if (els.copyDropdown) els.copyDropdown.classList.add('hidden');
@@ -2641,8 +3203,322 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------------------
+    // Interactive Precision-Recall Vector Curve & Threshold Explorer (Delight)
+    // -------------------------------------------------------------------------
+    const GNN_PR_BENCHMARKS = [
+        { r: 0.0000, p: 0.4900, t: 0.9500 },
+        { r: 0.0200, p: 0.4650, t: 0.9000 },
+        { r: 0.0400, p: 0.4300, t: 0.8500 },
+        { r: 0.0600, p: 0.3950, t: 0.8000 },
+        { r: 0.0800, p: 0.3650, t: 0.7500 },
+        { r: 0.1000, p: 0.3350, t: 0.7000 },
+        { r: 0.1200, p: 0.3100, t: 0.6400 },
+        { r: 0.1400, p: 0.2920, t: 0.5800 },
+        { r: 0.1495, p: 0.2827, t: 0.5254 }, // Max-F1 Point
+        { r: 0.1700, p: 0.2600, t: 0.4800 },
+        { r: 0.2000, p: 0.2300, t: 0.4200 },
+        { r: 0.2400, p: 0.1980, t: 0.3600 },
+        { r: 0.2800, p: 0.1700, t: 0.3100 },
+        { r: 0.3300, p: 0.1420, t: 0.2600 },
+        { r: 0.3800, p: 0.1200, t: 0.2200 },
+        { r: 0.4400, p: 0.0980, t: 0.1800 },
+        { r: 0.5000, p: 0.0800, t: 0.1500 },
+        { r: 0.5700, p: 0.0650, t: 0.1200 },
+        { r: 0.6500, p: 0.0500, t: 0.0900 },
+        { r: 0.7400, p: 0.0380, t: 0.0600 },
+        { r: 0.8400, p: 0.0260, t: 0.0400 },
+        { r: 0.9200, p: 0.0180, t: 0.0200 },
+        { r: 1.0000, p: 0.0123, t: 0.0000 }
+    ];
+
+    const XGB_PR_BENCHMARKS = [
+        { r: 0.0000, p: 0.2100, t: 0.9800 },
+        { r: 0.0400, p: 0.1850, t: 0.9500 },
+        { r: 0.0800, p: 0.1600, t: 0.9200 },
+        { r: 0.1200, p: 0.1420, t: 0.9000 },
+        { r: 0.1600, p: 0.1280, t: 0.8800 },
+        { r: 0.1880, p: 0.1178, t: 0.8711 }, // XGB Max-F1 Point
+        { r: 0.2400, p: 0.1000, t: 0.8200 },
+        { r: 0.3000, p: 0.0820, t: 0.7500 },
+        { r: 0.3800, p: 0.0640, t: 0.6500 },
+        { r: 0.4800, p: 0.0480, t: 0.5200 },
+        { r: 0.6000, p: 0.0350, t: 0.3800 },
+        { r: 0.7200, p: 0.0250, t: 0.2500 },
+        { r: 0.8500, p: 0.0180, t: 0.1200 },
+        { r: 1.0000, p: 0.0123, t: 0.0000 }
+    ];
+
+    function initInteractivePRCurve() {
+        const svg = document.getElementById('pr-vector-svg');
+        if (!svg) return;
+
+        const gridLayer = document.getElementById('pr-grid-layer');
+        const areaGnn = document.getElementById('pr-area-gnn');
+        const areaXgb = document.getElementById('pr-area-xgb');
+        const lineRandom = document.getElementById('pr-line-random');
+        const lineXgb = document.getElementById('pr-line-xgb');
+        const lineGnn = document.getElementById('pr-line-gnn');
+        const anchorGnn = document.getElementById('pr-anchor-gnn');
+        const anchorXgb = document.getElementById('pr-anchor-xgb');
+        const interactiveLayer = document.getElementById('pr-interactive-layer');
+        const crosshairV = document.getElementById('pr-crosshair-v');
+        const crosshairH = document.getElementById('pr-crosshair-h');
+        const scrubPoint = document.getElementById('pr-scrub-point');
+        const hud = document.getElementById('pr-hud-tooltip');
+        const chartWrapper = document.getElementById('pr-chart-wrapper');
+
+        // Dimensions
+        const PAD_LEFT = 60;
+        const PAD_RIGHT = 40;
+        const PAD_TOP = 25;
+        const PAD_BOTTOM = 50;
+        const PLOT_W = 760 - PAD_LEFT - PAD_RIGHT; // 660
+        const PLOT_H = 380 - PAD_TOP - PAD_BOTTOM; // 305
+
+        const xMap = (r) => PAD_LEFT + r * PLOT_W;
+        const yMap = (p) => PAD_TOP + (1.0 - p) * PLOT_H;
+        const recallFromX = (px) => Math.max(0, Math.min(1, (px - PAD_LEFT) / PLOT_W));
+
+        // 1. Render Grid Lines and Ticks
+        if (gridLayer) {
+            let gridHtml = '';
+            for (let p = 0.0; p <= 1.001; p += 0.2) {
+                const y = yMap(p);
+                gridHtml += `<line x1="${PAD_LEFT}" y1="${y.toFixed(1)}" x2="${PAD_LEFT + PLOT_W}" y2="${y.toFixed(1)}" class="pr-grid-line"></line>`;
+                gridHtml += `<text x="${PAD_LEFT - 10}" y="${(y + 4).toFixed(1)}" text-anchor="end" class="pr-tick-label">${(p * 100).toFixed(0)}%</text>`;
+            }
+            for (let r = 0.0; r <= 1.001; r += 0.2) {
+                const x = xMap(r);
+                gridHtml += `<line x1="${x.toFixed(1)}" y1="${PAD_TOP}" x2="${x.toFixed(1)}" y2="${PAD_TOP + PLOT_H}" class="pr-grid-line"></line>`;
+                gridHtml += `<text x="${x.toFixed(1)}" y="${(PAD_TOP + PLOT_H + 20).toFixed(1)}" text-anchor="middle" class="pr-tick-label">${(r * 100).toFixed(0)}%</text>`;
+            }
+            gridLayer.innerHTML = gridHtml;
+        }
+
+        // 2. Build Path Data
+        const buildPath = (pts) => {
+            return pts.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${xMap(pt.r).toFixed(2)} ${yMap(pt.p).toFixed(2)}`).join(' ');
+        };
+
+        const buildArea = (pts) => {
+            const line = buildPath(pts);
+            const xLast = xMap(pts[pts.length - 1].r).toFixed(2);
+            const xFirst = xMap(pts[0].r).toFixed(2);
+            const yZero = yMap(0.0).toFixed(2);
+            return `${line} L ${xLast} ${yZero} L ${xFirst} ${yZero} Z`;
+        };
+
+        if (lineGnn) lineGnn.setAttribute('d', buildPath(GNN_PR_BENCHMARKS));
+        if (areaGnn) areaGnn.setAttribute('d', buildArea(GNN_PR_BENCHMARKS));
+        if (lineXgb) lineXgb.setAttribute('d', buildPath(XGB_PR_BENCHMARKS));
+        if (areaXgb) areaXgb.setAttribute('d', buildArea(XGB_PR_BENCHMARKS));
+
+        if (lineRandom) {
+            const yFloor = yMap(0.0123).toFixed(1);
+            lineRandom.setAttribute('x1', PAD_LEFT);
+            lineRandom.setAttribute('y1', yFloor);
+            lineRandom.setAttribute('x2', PAD_LEFT + PLOT_W);
+            lineRandom.setAttribute('y2', yFloor);
+        }
+
+        // Position Max-F1 Anchor Pins
+        const gnnMax = { r: 0.1495, p: 0.2827 };
+        const xgbMax = { r: 0.1880, p: 0.1178 };
+
+        if (anchorGnn) {
+            const cx = xMap(gnnMax.r);
+            const cy = yMap(gnnMax.p);
+            const circle = anchorGnn.querySelector('circle');
+            const label = anchorGnn.querySelector('text');
+            if (circle) { circle.setAttribute('cx', cx.toFixed(2)); circle.setAttribute('cy', cy.toFixed(2)); }
+            if (label) { label.setAttribute('x', (cx + 12).toFixed(2)); label.setAttribute('y', (cy - 10).toFixed(2)); }
+        }
+
+        if (anchorXgb) {
+            const cx = xMap(xgbMax.r);
+            const cy = yMap(xgbMax.p);
+            const circle = anchorXgb.querySelector('circle');
+            const label = anchorXgb.querySelector('text');
+            if (circle) { circle.setAttribute('cx', cx.toFixed(2)); circle.setAttribute('cy', cy.toFixed(2)); }
+            if (label) { label.setAttribute('x', (cx + 10).toFixed(2)); label.setAttribute('y', (cy + 16).toFixed(2)); }
+        }
+
+        // 3. Interpolation Helper for Curve Inspection
+        function sampleCurveAtRecall(curve, recall) {
+            if (recall <= curve[0].r) return curve[0];
+            if (recall >= curve[curve.length - 1].r) return curve[curve.length - 1];
+            for (let i = 0; i < curve.length - 1; i++) {
+                if (recall >= curve[i].r && recall <= curve[i + 1].r) {
+                    const span = curve[i + 1].r - curve[i].r;
+                    const frac = span === 0 ? 0 : (recall - curve[i].r) / span;
+                    const p = curve[i].p + frac * (curve[i + 1].p - curve[i].p);
+                    const t = curve[i].t + frac * (curve[i + 1].t - curve[i].t);
+                    return { r: recall, p, t };
+                }
+            }
+            return curve[0];
+        }
+
+        function sampleCurveAtThreshold(curve, threshold) {
+            let best = curve[0];
+            let bestDist = Math.abs(curve[0].t - threshold);
+            for (let i = 1; i < curve.length; i++) {
+                const dist = Math.abs(curve[i].t - threshold);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = curve[i];
+                }
+            }
+            return best;
+        }
+
+        // 4. Hover & Crosshair HUD
+        svg.addEventListener('mousemove', (e) => {
+            const rect = svg.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const normX = (mouseX / rect.width) * 760;
+
+            if (normX < PAD_LEFT || normX > PAD_LEFT + PLOT_W) {
+                if (interactiveLayer) interactiveLayer.style.display = 'none';
+                if (hud) hud.style.display = 'none';
+                return;
+            }
+
+            const rec = recallFromX(normX);
+            const pt = sampleCurveAtRecall(GNN_PR_BENCHMARKS, rec);
+            const px = xMap(pt.r);
+            const py = yMap(pt.p);
+            const f1 = (2 * pt.p * pt.r) / (pt.p + pt.r || 1);
+
+            if (interactiveLayer) {
+                interactiveLayer.style.display = 'block';
+                if (crosshairV) {
+                    crosshairV.setAttribute('x1', px.toFixed(1));
+                    crosshairV.setAttribute('y1', PAD_TOP);
+                    crosshairV.setAttribute('x2', px.toFixed(1));
+                    crosshairV.setAttribute('y2', PAD_TOP + PLOT_H);
+                }
+                if (crosshairH) {
+                    crosshairH.setAttribute('x1', PAD_LEFT);
+                    crosshairH.setAttribute('y1', py.toFixed(1));
+                    crosshairH.setAttribute('x2', PAD_LEFT + PLOT_W);
+                    crosshairH.setAttribute('y2', py.toFixed(1));
+                }
+                if (scrubPoint) {
+                    scrubPoint.setAttribute('cx', px.toFixed(1));
+                    scrubPoint.setAttribute('cy', py.toFixed(1));
+                }
+            }
+
+            if (hud && chartWrapper) {
+                hud.style.display = 'block';
+                const wrapRect = chartWrapper.getBoundingClientRect();
+                const hudX = Math.min(e.clientX - wrapRect.left + 16, wrapRect.width - 210);
+                const hudY = Math.max(10, Math.min(e.clientY - wrapRect.top, wrapRect.height - 120));
+                hud.style.left = `${hudX}px`;
+                hud.style.top = `${hudY}px`;
+
+                const precEl = document.getElementById('pr-hud-prec');
+                const recEl = document.getElementById('pr-hud-rec');
+                const f1El = document.getElementById('pr-hud-f1');
+                const thrEl = document.getElementById('pr-hud-thr');
+
+                if (precEl) precEl.textContent = `${(pt.p * 100).toFixed(1)}%`;
+                if (recEl) recEl.textContent = `${(pt.r * 100).toFixed(1)}%`;
+                if (f1El) f1El.textContent = f1.toFixed(4);
+                if (thrEl) thrEl.textContent = pt.t.toFixed(4);
+            }
+        });
+
+        svg.addEventListener('mouseleave', () => {
+            if (interactiveLayer) interactiveLayer.style.display = 'none';
+            if (hud) hud.style.display = 'none';
+        });
+
+        // 5. Decision Threshold Slider Simulator
+        const slider = document.getElementById('pr-threshold-slider');
+        const simThrVal = document.getElementById('pr-sim-threshold-val');
+        const simRecVal = document.getElementById('sim-recall-val');
+        const simMulesCaught = document.getElementById('sim-mules-caught');
+        const simPrecVal = document.getElementById('sim-precision-val');
+        const simLiftVal = document.getElementById('sim-lift-val');
+        const simQueueVal = document.getElementById('sim-queue-val');
+        const simWorkloadVal = document.getElementById('sim-workload-val');
+
+        function updateThresholdSimulation(thr) {
+            const pt = sampleCurveAtThreshold(GNN_PR_BENCHMARKS, thr);
+            const mulesCaught = Math.round(pt.r * 1271);
+            const lift = (pt.p / 0.0123).toFixed(1);
+            const totalAlerts = Math.round(mulesCaught / Math.max(pt.p, 0.01));
+            const weeklyAlerts = Math.max(8, Math.round(totalAlerts / 52 * 8.5));
+
+            if (simThrVal) simThrVal.textContent = thr.toFixed(4);
+            if (simRecVal) simRecVal.textContent = `${(pt.r * 100).toFixed(2)}%`;
+            if (simMulesCaught) simMulesCaught.textContent = `~${mulesCaught} / 1,271 Mules`;
+            if (simPrecVal) simPrecVal.textContent = `${(pt.p * 100).toFixed(2)}%`;
+            if (simLiftVal) simLiftVal.textContent = `${lift}× Over Random Floor`;
+            if (simQueueVal) simQueueVal.textContent = `~${weeklyAlerts} Alerts / Wk`;
+
+            if (simWorkloadVal) {
+                if (thr >= 0.50 && thr <= 0.55) {
+                    simWorkloadVal.textContent = 'Optimal Max-F1 Balance (Recommended)';
+                    simWorkloadVal.style.color = 'var(--lime-500)';
+                } else if (thr < 0.30) {
+                    simWorkloadVal.textContent = 'High Alert Queue — Risk of Triage Fatigue';
+                    simWorkloadVal.style.color = 'var(--risk-high)';
+                } else {
+                    simWorkloadVal.textContent = 'High Precision Triage — Low False Positives';
+                    simWorkloadVal.style.color = 'var(--info)';
+                }
+            }
+
+            if (interactiveLayer) {
+                interactiveLayer.style.display = 'block';
+                const px = xMap(pt.r);
+                const py = yMap(pt.p);
+                if (crosshairV) { crosshairV.setAttribute('x1', px.toFixed(1)); crosshairV.setAttribute('x2', px.toFixed(1)); }
+                if (crosshairH) { crosshairH.setAttribute('y1', py.toFixed(1)); crosshairH.setAttribute('y2', py.toFixed(1)); }
+                if (scrubPoint) { scrubPoint.setAttribute('cx', px.toFixed(1)); scrubPoint.setAttribute('cy', py.toFixed(1)); }
+            }
+        }
+
+        if (slider) {
+            slider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                updateThresholdSimulation(val);
+            });
+            updateThresholdSimulation(0.5254);
+        }
+
+        // 6. Model Visibility Toggles
+        const toggles = document.querySelectorAll('.pr-toggle-chip');
+        toggles.forEach(chip => {
+            chip.addEventListener('click', () => {
+                chip.classList.toggle('active');
+                const model = chip.dataset.model;
+                const isActive = chip.classList.contains('active');
+
+                if (model === 'graphsage') {
+                    if (lineGnn) lineGnn.classList.toggle('hidden-curve', !isActive);
+                    if (areaGnn) areaGnn.classList.toggle('hidden-curve', !isActive);
+                    if (anchorGnn) anchorGnn.classList.toggle('hidden-curve', !isActive);
+                } else if (model === 'xgboost') {
+                    if (lineXgb) lineXgb.classList.toggle('hidden-curve', !isActive);
+                    if (areaXgb) areaXgb.classList.toggle('hidden-curve', !isActive);
+                    if (anchorXgb) anchorXgb.classList.toggle('hidden-curve', !isActive);
+                } else if (model === 'random') {
+                    if (lineRandom) lineRandom.classList.toggle('hidden-curve', !isActive);
+                }
+            });
+        });
+    }
+
+    window.renderInteractivePRCurve = initInteractivePRCurve;
+
+    // -------------------------------------------------------------------------
     // Initial Boot Sequence
     // -------------------------------------------------------------------------
     loadTelemetry();
     selectAccount(state.currentAccountId);
+    initInteractivePRCurve();
 });

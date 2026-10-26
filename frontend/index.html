@@ -6,16 +6,16 @@
     <title>Mule-tiplier — AML Money Mule Detection & Graph Intelligence</title>
     <meta name="description" content="Mule-tiplier: Enterprise Anti-Money Laundering graph intelligence cockpit powered by inductive GraphSAGE GNNs, multi-hop temporal motif chain tracing, and GNNExplainer attribution.">
     
-    <!-- Typography: Inter & JetBrains Mono -->
+    <!-- Typography: Public Sans & JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     
     <!-- Stylesheet -->
-    <link rel="stylesheet" href="/static/style.css?v=8">
+    <link rel="stylesheet" href="/static/style.css?v=15">
 </head>
 <body>
     <div id="app" class="app-layout">
@@ -24,11 +24,11 @@
             <div class="logo-area">
                 <div class="logo-icon">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="6" cy="6" r="3" fill="#B6FF2E" stroke="#B6FF2E"/>
-                        <circle cx="18" cy="18" r="3" fill="#B6FF2E" stroke="#B6FF2E"/>
-                        <circle cx="18" cy="6" r="2.5" stroke="#B6FF2E"/>
-                        <path d="M8.5 8.5l7 7" stroke="#B6FF2E" stroke-width="2.5"/>
-                        <path d="M15.5 8.5l-7 7" stroke="#B6FF2E" stroke-width="1.5" stroke-dasharray="2 2"/>
+                        <circle cx="6" cy="6" r="3" fill="var(--lime-500)" stroke="var(--lime-500)"/>
+                        <circle cx="18" cy="18" r="3" fill="var(--lime-500)" stroke="var(--lime-500)"/>
+                        <circle cx="18" cy="6" r="2.5" stroke="var(--lime-500)"/>
+                        <path d="M8.5 8.5l7 7" stroke="var(--lime-500)" stroke-width="2.5"/>
+                        <path d="M15.5 8.5l-7 7" stroke="var(--lime-500)" stroke-width="1.5" stroke-dasharray="2 2"/>
                     </svg>
                 </div>
                 <div class="logo-text">
@@ -38,13 +38,15 @@
             </div>
 
             <!-- Global Search & Autocomplete Input -->
-            <div class="search-container">
+            <div class="search-container" id="search-container">
                 <div class="search-box" id="search-box">
-                    <i data-lucide="search" class="search-icon"></i>
-                    <input type="text" id="global-search-input" placeholder="Search Account ID or Presets... (Press '/' to focus)" autocomplete="off">
+                    <i data-lucide="search" class="search-icon" id="search-icon"></i>
+                    <input type="text" id="global-search-input" placeholder="Search 515,080 accounts or presets... (Press '/' to focus)" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="autocomplete-dropdown" aria-autocomplete="list">
+                    <button class="search-clear-btn hidden" id="search-clear-btn" type="button" title="Clear Search" aria-label="Clear Search">&times;</button>
+                    <div class="search-spinner hidden" id="search-spinner" aria-hidden="true"></div>
                     <span class="keyboard-hint" id="kbd-hint">/</span>
                 </div>
-                <div class="autocomplete-dropdown hidden" id="autocomplete-dropdown">
+                <div class="autocomplete-dropdown hidden" id="autocomplete-dropdown" role="listbox" aria-label="Account Search Suggestions">
                     <!-- Populated dynamically -->
                 </div>
             </div>
@@ -52,9 +54,12 @@
             <!-- Right Controls: Status Chip & Theme Toggle -->
             <div class="top-controls">
                 <div class="status-chip" title="Model operational on NVIDIA GPU">
-                    <span class="pulse-dot"></span>
+                    <span class="status-dot"></span>
                     <span class="status-label">Live · CUDA Model</span>
                 </div>
+                <button class="icon-btn" id="btn-toggle-telemetry" title="Toggle Compact Telemetry Bar (T)" aria-label="Toggle Compact Telemetry">
+                    <i data-lucide="chevrons-up" id="telemetry-chevron"></i>
+                </button>
                 <button class="icon-btn theme-toggle" id="theme-toggle-btn" title="Toggle Light/Dark Theme">
                     <i data-lucide="sun" class="sun-icon"></i>
                     <i data-lucide="moon" class="moon-icon"></i>
@@ -149,31 +154,35 @@
         </section>
 
         <!-- 4. Tab Navigation Bar -->
-        <nav class="tab-navigation">
+        <nav class="tab-navigation" aria-label="Investigation Views">
             <button class="tab-btn active" data-tab="tab-insights" id="tab-btn-1">
                 <i data-lucide="activity"></i>
                 <span>Insights Cockpit</span>
-                <span class="tab-num">1</span>
+                <span class="tab-num" title="Shortcut: Press 1">1</span>
             </button>
             <button class="tab-btn" data-tab="tab-chains" id="tab-btn-2">
                 <i data-lucide="git-commit"></i>
                 <span>Chain Stepper</span>
-                <span class="tab-num">2</span>
+                <span class="tab-num" title="Shortcut: Press 2">2</span>
             </button>
             <button class="tab-btn" data-tab="tab-explainer" id="tab-btn-3">
                 <i data-lucide="bar-chart-3"></i>
                 <span>GNNExplainer</span>
-                <span class="tab-num">3</span>
+                <span class="tab-num" title="Shortcut: Press 3">3</span>
             </button>
             <button class="tab-btn" data-tab="tab-sar" id="tab-btn-4">
                 <i data-lucide="file-text"></i>
                 <span>SAR Risk Card</span>
-                <span class="tab-num">4</span>
+                <span class="tab-num" title="Shortcut: Press 4">4</span>
             </button>
             <button class="tab-btn" data-tab="tab-benchmarks" id="tab-btn-5">
                 <i data-lucide="gauge"></i>
                 <span>Benchmarks</span>
-                <span class="tab-num">5</span>
+                <span class="tab-num" title="Shortcut: Press 5">5</span>
+            </button>
+            <button class="layout-mode-btn" id="btn-toggle-layout" title="Toggle Full Workspace (Shortcut: F)">
+                <i data-lucide="maximize-2" id="layout-toggle-icon"></i>
+                <span id="layout-toggle-text">Full Workspace</span>
             </button>
             <div class="active-tab-indicator" id="active-tab-indicator"></div>
         </nav>
@@ -781,11 +790,139 @@
                             </table>
                         </div>
 
-                        <!-- Benchmark PR Curve Visualizer -->
-                        <div class="pr-curve-container">
-                            <h4 class="section-title">Precision-Recall Curve Comparison</h4>
-                            <div class="chart-embed-box">
-                                <img src="/outputs/figures/pr_curve_comparison.png" alt="PR Curve Comparison" class="responsive-img" onerror="this.style.display='none'">
+                        <!-- Benchmark PR Curve Visualizer (Delight Interactive Vector Engine) -->
+                        <div class="pr-curve-container" id="interactive-pr-container">
+                            <div class="pr-curve-header">
+                                <div class="pr-title-group">
+                                    <h4 class="section-title">Precision-Recall Curve Comparison (Test Split)</h4>
+                                    <span class="pr-subtitle">Interactive Tradeoff Explorer · Hover curve to inspect · Scrub threshold slider</span>
+                                </div>
+                                <div class="pr-model-toggles">
+                                    <button type="button" class="pr-toggle-chip active" data-model="graphsage" id="toggle-pr-graphsage" title="Toggle GraphSAGE Curve">
+                                        <span class="pr-chip-dot dot-lime"></span>
+                                        <span>GraphSAGE (0.1884)</span>
+                                    </button>
+                                    <button type="button" class="pr-toggle-chip active" data-model="xgboost" id="toggle-pr-xgboost" title="Toggle XGBoost Baseline">
+                                        <span class="pr-chip-dot dot-orange"></span>
+                                        <span>XGBoost (0.0834)</span>
+                                    </button>
+                                    <button type="button" class="pr-toggle-chip active" data-model="random" id="toggle-pr-random" title="Toggle Random Floor">
+                                        <span class="pr-chip-dot dot-gray"></span>
+                                        <span>Random Floor (0.0123)</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Interactive Vector SVG Chart Container -->
+                            <div class="pr-chart-wrapper" id="pr-chart-wrapper">
+                                <svg id="pr-vector-svg" viewBox="0 0 760 380" preserveAspectRatio="xMidYMid meet" class="pr-vector-svg">
+                                    <!-- Definitions: Gradients and Filters -->
+                                    <defs>
+                                        <linearGradient id="gnn-curve-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                            <stop offset="0%" stop-color="#B6FF2E" stop-opacity="0.25" />
+                                            <stop offset="100%" stop-color="#B6FF2E" stop-opacity="0.0" />
+                                        </linearGradient>
+                                        <linearGradient id="xgb-curve-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                            <stop offset="0%" stop-color="#FF8A3D" stop-opacity="0.14" />
+                                            <stop offset="100%" stop-color="#FF8A3D" stop-opacity="0.0" />
+                                        </linearGradient>
+                                    </defs>
+
+                                    <!-- Grid lines & Axes Background -->
+                                    <g id="pr-grid-layer"></g>
+
+                                    <!-- Area Fills -->
+                                    <path id="pr-area-gnn" class="pr-area-fill" fill="url(#gnn-curve-gradient)"></path>
+                                    <path id="pr-area-xgb" class="pr-area-fill" fill="url(#xgb-curve-gradient)"></path>
+
+                                    <!-- Model Lines -->
+                                    <line id="pr-line-random" class="pr-curve-line line-random" stroke="#565C6B" stroke-dasharray="4,4" stroke-width="1.5"></line>
+                                    <path id="pr-line-xgb" class="pr-curve-line line-xgb" stroke="#FF8A3D" stroke-dasharray="5,4" stroke-width="2" fill="none"></path>
+                                    <path id="pr-line-gnn" class="pr-curve-line line-gnn" stroke="#B6FF2E" stroke-width="2.8" fill="none"></path>
+
+                                    <!-- Max-F1 Anchor Markers -->
+                                    <g id="pr-anchors-layer">
+                                        <g id="pr-anchor-xgb" class="pr-anchor-group" cursor="pointer">
+                                            <circle cx="0" cy="0" r="5" fill="#EA580C" stroke="#23262F" stroke-width="2" />
+                                            <text id="pr-label-xgb" class="pr-anchor-label mono" fill="#CBD5E1" font-size="11">XGB Max-F1 (0.145)</text>
+                                        </g>
+                                        <g id="pr-anchor-gnn" class="pr-anchor-group" cursor="pointer">
+                                            <circle cx="0" cy="0" r="7" fill="#B6FF2E" stroke="#14161B" stroke-width="2.5" />
+                                            <text id="pr-label-gnn" class="pr-anchor-label mono font-bold" fill="#B6FF2E" font-size="11.5">GraphSAGE Max-F1 (0.196)</text>
+                                        </g>
+                                    </g>
+
+                                    <!-- Interactive Crosshair & Scrub Marker -->
+                                    <g id="pr-interactive-layer" style="display: none;">
+                                        <line id="pr-crosshair-v" class="pr-crosshair" stroke="#9CA3AF" stroke-dasharray="3,3" stroke-width="1"></line>
+                                        <line id="pr-crosshair-h" class="pr-crosshair" stroke="#9CA3AF" stroke-dasharray="3,3" stroke-width="1"></line>
+                                        <circle id="pr-scrub-point" r="6" fill="#CDFF5E" stroke="#14161B" stroke-width="2"></circle>
+                                    </g>
+
+                                    <!-- Axis labels -->
+                                    <text x="400" y="372" text-anchor="middle" class="pr-axis-label" fill="#CBD5E1">Recall (Mules Caught)</text>
+                                    <text transform="rotate(-90)" x="-190" y="20" text-anchor="middle" class="pr-axis-label" fill="#CBD5E1">Precision (Alert Purity)</text>
+                                </svg>
+
+                                <!-- Floating Crosshair HUD Tooltip -->
+                                <div class="pr-hud-tooltip" id="pr-hud-tooltip" style="display: none;">
+                                    <div class="pr-hud-header" id="pr-hud-title">GraphSAGE Operating Point</div>
+                                    <div class="pr-hud-grid">
+                                        <div class="pr-hud-stat">
+                                            <span class="hud-label">Precision:</span>
+                                            <span class="hud-val mono" id="pr-hud-prec">28.3%</span>
+                                        </div>
+                                        <div class="pr-hud-stat">
+                                            <span class="hud-label">Recall:</span>
+                                            <span class="hud-val mono" id="pr-hud-rec">15.0%</span>
+                                        </div>
+                                        <div class="pr-hud-stat">
+                                            <span class="hud-label">F1 Score:</span>
+                                            <span class="hud-val mono accent-text" id="pr-hud-f1">0.1956</span>
+                                        </div>
+                                        <div class="pr-hud-stat">
+                                            <span class="hud-label">Threshold:</span>
+                                            <span class="hud-val mono" id="pr-hud-thr">0.5254</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Interactive Decision Threshold Simulator & Tradeoff Bar -->
+                            <div class="pr-simulator-bar">
+                                <div class="pr-sim-control">
+                                    <div class="pr-sim-label-row">
+                                        <label for="pr-threshold-slider" class="pr-sim-label">
+                                            <i data-lucide="sliders" class="sim-icon"></i>
+                                            <span>Simulate Decision Threshold:</span>
+                                        </label>
+                                        <span class="pr-threshold-val mono accent-text" id="pr-sim-threshold-val">0.5254</span>
+                                    </div>
+                                    <input type="range" id="pr-threshold-slider" min="0.05" max="0.95" step="0.01" value="0.5254" class="pr-slider">
+                                    <div class="pr-slider-ticks">
+                                        <span>0.05 (High Recall)</span>
+                                        <span class="accent-text font-semibold">0.525 (Optimal Max-F1)</span>
+                                        <span>0.95 (High Purity)</span>
+                                    </div>
+                                </div>
+
+                                <div class="pr-sim-metrics">
+                                    <div class="pr-metric-chip">
+                                        <span class="metric-title">ESTIMATED RECALL</span>
+                                        <span class="metric-val mono" id="sim-recall-val">14.95%</span>
+                                        <span class="metric-sub" id="sim-mules-caught">~190 / 1,271 Mules</span>
+                                    </div>
+                                    <div class="pr-metric-chip highlight-chip">
+                                        <span class="metric-title">ALERT PURITY (PRECISION)</span>
+                                        <span class="metric-val mono accent-text" id="sim-precision-val">28.27%</span>
+                                        <span class="metric-sub" id="sim-lift-val">23.0× Over Random Floor</span>
+                                    </div>
+                                    <div class="pr-metric-chip">
+                                        <span class="metric-title">ESTIMATED TRIAGE QUEUE</span>
+                                        <span class="metric-val mono" id="sim-queue-val">~118 Alerts / Wk</span>
+                                        <span class="metric-sub" id="sim-workload-val">Manageable for 2 Analysts</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -801,7 +938,7 @@
                         <button class="canvas-btn" id="btn-zoom-out" title="Zoom Out"><i data-lucide="zoom-out"></i></button>
                         <button class="canvas-btn" id="btn-fit-screen" title="Fit to Screen"><i data-lucide="maximize-2"></i></button>
                         <div class="divider-v"></div>
-                        <button class="canvas-btn" id="btn-toggle-physics" title="Toggle Layout Physics"><i data-lucide="play" id="physics-icon"></i></button>
+                        <button class="canvas-btn" id="btn-toggle-physics" title="Toggle Layout Physics"><i data-lucide="pause" id="physics-icon"></i></button>
                         <button class="canvas-btn" id="btn-table-alt" title="Toggle Accessible Table View"><i data-lucide="list"></i></button>
                     </div>
 
@@ -873,11 +1010,61 @@
             </div>
         </main>
 
+        <!-- Emergency Account Freeze Confirmation Modal (High Consequence Compliance Guardrail) -->
+        <div class="modal-backdrop hidden" id="freeze-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="freeze-modal-title">
+            <div class="modal-box">
+                <div class="modal-header">
+                    <div class="modal-title-group">
+                        <div class="modal-icon-badge danger">
+                            <i data-lucide="alert-octagon"></i>
+                        </div>
+                        <div>
+                            <h3 class="modal-title" id="freeze-modal-title">Confirm Account Compliance Freeze</h3>
+                            <p class="modal-subtitle">Enact regulatory lock on transactions, ACH disbursements, and counterparty flows</p>
+                        </div>
+                    </div>
+                    <button type="button" class="modal-close-btn" id="btn-close-freeze-modal" aria-label="Close dialog">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="freeze-summary-box">
+                        <div class="freeze-row">
+                            <span class="freeze-label">Subject Account ID:</span>
+                            <span class="freeze-val mono" id="freeze-modal-account-id">811C2F680</span>
+                        </div>
+                        <div class="freeze-row">
+                            <span class="freeze-label">GNN Risk Assessment:</span>
+                            <span class="freeze-val mono" id="freeze-modal-risk-tier">HIGH RISK (70.0%)</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="freeze-reason-select" class="form-label">Mandatory Regulatory Reason Code:</label>
+                        <select id="freeze-reason-select" class="form-select">
+                            <option value="flight_risk">Immediate Asset Flight / Cash-Out Risk</option>
+                            <option value="sar_escalation">FinCEN SAR Escalation & Multi-Hop Containment</option>
+                            <option value="subpoena">Law Enforcement Subpoena / Court Freeze Order</option>
+                            <option value="smurfing">Smurfing / Structured Mule Aggregation</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="freeze-notes-input" class="form-label">Investigator Case Audit Notes:</label>
+                        <input type="text" id="freeze-notes-input" class="form-input" placeholder="e.g. Rapid pass-through layering confirmed in sequential motif stepper" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-ghost" id="btn-cancel-freeze">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="btn-confirm-freeze">
+                        <i data-lucide="lock"></i>
+                        <span>Enact Freeze</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Toast Notifications Container -->
         <div class="toast-container" id="toast-container"></div>
     </div>
 
     <!-- Scripts -->
-    <script src="/static/app.js?v=8"></script>
+    <script src="/static/app.js?v=15"></script>
 </body>
 </html>
