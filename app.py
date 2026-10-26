@@ -90,10 +90,10 @@ st.markdown("""
 # --------------------------------------------------------------------------
 @st.cache_resource(show_spinner="Loading Transaction Graph & GraphSAGE Model...")
 def load_system_pipeline():
-    df = pd.read_csv("./data/processed/processed_df.csv")
-    features_df = pd.read_csv("./data/processed/account_features.csv")
-    split_df = pd.read_csv("./data/processed/split_accounts.csv")
-    data = build_pyg_data(df, features_df, split_df)
+    df = pd.read_csv("./data/processed/processed_df.csv", dtype={"from_Account": str, "to_Account": str})
+    features_df = pd.read_csv("./data/processed/account_features.csv", dtype={"account": str})
+    split_df = pd.read_csv("./data/processed/split_accounts.csv", dtype={"account": str})
+    data = build_pyg_data(df, features_df, split_df, filter_invalid_edges=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = GraphSAGEClassifier(in_dim=8, hidden_dim=64, num_layers=2).to(device)

@@ -4,13 +4,38 @@ import pandas as pd
 from torch_geometric.data import Data
 from sklearn.preprocessing import StandardScaler
 
-def build_pyg_data(df, features_df, split_df, add_reverse_edges=True):
+def build_pyg_data(df, features_df, split_df, add_reverse_edges=True, filter_invalid_edges=False):
     merge_df = pd.merge(features_df, split_df, on='account')
+    merge_df['account'] = merge_df['account'].astype(str)
 
-    account_to_idx = {account:i for i, account in enumerate(merge_df['account'])}
-    src = df['from_Account'].map(account_to_idx)
-    dst = df['to_Account'].map(account_to_idx)
-    assert not src.isna().any() and not dst.isna().any()
+    account_to_idx = {account: i for i, account in enumerate(merge_df['account'])}
+    src = df['from_Account'].astype(str).map(account_to_idx)
+    dst = df['to_Account'].astype(str).map(account_to_idx)
+
+    missing_mask = src.isna() | dst.isna()
+    if missing_mask.any():
+        num_src_missing = int(src.isna().sum())
+        num_dst_missing = int(dst.isna().sum())
+        sample_missing_src = df.loc[src.isna(), 'from_Account'].head(5).tolist()
+        sample_missing_dst = df.loc[dst.isna(), 'to_Account'].head(5).tolist()
+        err_msg = (
+            f"build_pyg_data: Graph edge endpoints missing from node index. "
+            f"Unmapped source endpoints: {num_src_missing} (samples: {sample_missing_src}), "
+            f"unmapped destination endpoints: {num_dst_missing} (samples: {sample_missing_dst}). "
+            f"Total indexed accounts in merge_df: {len(merge_df)}. "
+            f"This usually occurs if account_features.csv or split_accounts.csv is corrupted, incomplete, "
+            f"or was read while being generated."
+        )
+        if filter_invalid_edges:
+            print(f"Warning: {err_msg} Filtering out {int(missing_mask.sum())} invalid transactions.")
+            src = src[~missing_mask].astype(np.int64)
+            dst = dst[~missing_mask].astype(np.int64)
+        else:
+            raise ValueError(err_msg)
+    else:
+        src = src.astype(np.int64)
+        dst = dst.astype(np.int64)
+
     # Tensor edges
     edge_index = torch.tensor(np.stack([src.values, dst.values]), dtype=torch.long)
     
