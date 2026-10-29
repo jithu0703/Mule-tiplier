@@ -25,6 +25,12 @@ Starting scale: **HI-Small** (~5M transactions). Larger sizes (HI-Medium, HI-Lar
 ```
 chain-reaction/
 │
+├── docs/                     # Project documentation & design specifications
+│   ├── Architecture.md       # Complete system & software architecture reference
+│   ├── DESIGN.md             # UI/UX design system & token specification
+│   ├── MILESTONES.md         # Technical milestone roadmaps & concepts
+│   └── PROJECT_STATUS.md     # Detailed milestone completion & benchmark report
+│
 ├── data/
 │   ├── raw/                  # Untouched downloaded dataset files
 │   └── processed/            # Cleaned data, computed features, saved graphs
@@ -48,16 +54,33 @@ chain-reaction/
 │   ├── risk_report.py        # Combined Analyst Risk Cards & ego-subgraphs
 │   └── spark_features.py     # Distributed PySpark feature engineering
 │
+├── frontend/                 # Production AML investigation cockpit
+│   ├── app.js                # State management & force graph visualization
+│   ├── index.html            # Web cockpit interface
+│   └── style.css             # Dark-first graphite / lime spark design system
+│
 ├── outputs/
 │   ├── figures/              # Saved plots and visualizations
 │   ├── cache/                # Serialized graphs
 │   ├── models/               # XGBoost model (model.json) & GraphSAGE (graphsage.pt)
 │   └── results/              # Evaluation benchmark tables
 ├── app.py                    # Interactive Streamlit AML Compliance Dashboard
+├── server.py                 # FastAPI REST API serving models, graph topology, & dossiers
 │
 ├── requirements.txt
 └── README.md
 ```
+
+---
+
+## Documentation
+
+Comprehensive project documentation is organized in the [docs/](docs/) directory:
+- [**Architecture.md**](docs/Architecture.md) — Comprehensive technical reference detailing system architecture, data pipelines, GraphSAGE GNN design, temporal motif chain detection, explainability, and serving infrastructure.
+- [**DESIGN.md**](docs/DESIGN.md) — Design system specification covering tokens, graphite/lime color scales, UI components, and analyst cockpit layouts.
+- [**MILESTONES.md**](docs/MILESTONES.md) — Step-by-step milestone definitions, conceptual prerequisites, and completion criteria.
+- [**PROJECT_STATUS.md**](docs/PROJECT_STATUS.md) — Full progress and benchmark report across Milestones 1–5.
+
 
 ---
 
